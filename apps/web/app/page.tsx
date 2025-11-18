@@ -24,7 +24,7 @@ export default function HomePage() {
             href="/reporting"
             className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
           >
-            LLM Reporting →
+            Reports →
           </Link>
           <Link
             href="/search"
