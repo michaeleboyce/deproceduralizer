@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { dcSections } from "@/db/schema";
-import { sql } from "drizzle-orm";
+import { sections } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
 /**
  * GET /api/filters/titles
@@ -10,12 +10,16 @@ import { sql } from "drizzle-orm";
  */
 export async function GET() {
   try {
+    // Hardcode jurisdiction to 'dc' for now (transparent to user)
+    const jurisdiction = 'dc';
+
     const titles = await db
       .selectDistinct({
-        title: dcSections.titleLabel,
+        title: sections.titleLabel,
       })
-      .from(dcSections)
-      .orderBy(dcSections.titleLabel);
+      .from(sections)
+      .where(eq(sections.jurisdiction, jurisdiction))
+      .orderBy(sections.titleLabel);
 
     return NextResponse.json({
       titles: titles.map((t) => t.title),

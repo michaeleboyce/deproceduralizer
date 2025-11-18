@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { dcSections, dcSectionTags, dcGlobalTags } from "@/db/schema";
+import { sections, sectionTags, globalTags } from "@/db/schema";
 import { sql, and, eq, SQL, or, like } from "drizzle-orm";
 
 /**
@@ -19,8 +19,12 @@ export async function GET(request: Request) {
     const searchQuery = searchParams.get("searchQuery");
     const sortBy = searchParams.get("sortBy") || "citation"; // citation | titleLabel | heading
 
+    // Hardcode jurisdiction to 'dc' for now (transparent to user)
+    const jurisdiction = 'dc';
+
     // Build WHERE conditions dynamically
     const whereConditions: SQL[] = [];
+    whereConditions.push(sql`s.jurisdiction = ${jurisdiction}`);
     whereConditions.push(sql`s.has_reporting = true`);
 
     if (title && title.trim()) {
@@ -39,7 +43,7 @@ export async function GET(request: Request) {
 
     // Build tag join clause
     const tagJoinClause = tag && tag.trim()
-      ? sql`INNER JOIN dc_section_tags st ON st.section_id = s.id AND st.tag = ${tag}`
+      ? sql`INNER JOIN section_tags st ON st.jurisdiction = ${jurisdiction} AND st.section_id = s.id AND st.tag = ${tag}`
       : sql``;
 
     // Build WHERE clause
@@ -57,11 +61,12 @@ export async function GET(request: Request) {
 
     // Main query to get sections with their tags
     const mainSql = sql`
-      WITH section_tags AS (
+      WITH section_tags_agg AS (
         SELECT
           st.section_id,
           json_agg(st.tag ORDER BY st.tag) as tags
-        FROM dc_section_tags st
+        FROM section_tags st
+        WHERE st.jurisdiction = ${jurisdiction}
         GROUP BY st.section_id
       )
       SELECT
@@ -72,9 +77,9 @@ export async function GET(request: Request) {
         s.title_label,
         s.chapter_label,
         COALESCE(tags.tags, '[]'::json) as tags
-      FROM dc_sections s
+      FROM sections s
       ${tagJoinClause}
-      LEFT JOIN section_tags tags ON tags.section_id = s.id
+      LEFT JOIN section_tags_agg tags ON tags.section_id = s.id
       ${whereClause}
       ${orderByClause}
     `;
@@ -84,7 +89,7 @@ export async function GET(request: Request) {
     // Get total count
     const countSql = sql`
       SELECT COUNT(DISTINCT s.id)::int as count
-      FROM dc_sections s
+      FROM sections s
       ${tagJoinClause}
       ${whereClause}
     `;
@@ -95,9 +100,9 @@ export async function GET(request: Request) {
     // Get all unique tags for the filter dropdown
     const allTagsSql = sql`
       SELECT DISTINCT st.tag
-      FROM dc_section_tags st
-      INNER JOIN dc_sections s ON s.id = st.section_id
-      WHERE s.has_reporting = true
+      FROM section_tags st
+      INNER JOIN sections s ON s.jurisdiction = st.jurisdiction AND s.id = st.section_id
+      WHERE st.jurisdiction = ${jurisdiction} AND s.has_reporting = true
       ORDER BY st.tag
     `;
 

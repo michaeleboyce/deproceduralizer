@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { dcSections } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { sections } from "@/db/schema";
+import { eq, and } from "drizzle-orm";
 
 /**
  * GET handler for a single section by ID
@@ -13,18 +13,25 @@ export async function GET(
   try {
     const { id } = await params;
 
+    // Hardcode jurisdiction to 'dc' for now (transparent to user)
+    const jurisdiction = 'dc';
+
     const [section] = await db
       .select({
-        id: dcSections.id,
-        citation: dcSections.citation,
-        heading: dcSections.heading,
-        textPlain: dcSections.textPlain,
-        textHtml: dcSections.textHtml,
-        titleLabel: dcSections.titleLabel,
-        chapterLabel: dcSections.chapterLabel,
+        id: sections.id,
+        jurisdiction: sections.jurisdiction,
+        citation: sections.citation,
+        heading: sections.heading,
+        textPlain: sections.textPlain,
+        textHtml: sections.textHtml,
+        titleLabel: sections.titleLabel,
+        chapterLabel: sections.chapterLabel,
       })
-      .from(dcSections)
-      .where(eq(dcSections.id, id))
+      .from(sections)
+      .where(and(
+        eq(sections.jurisdiction, jurisdiction),
+        eq(sections.id, id)
+      ))
       .limit(1);
 
     if (!section) {

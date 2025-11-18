@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Parse DC Code XML files into sections NDJSON.
+Parse legal code XML files into sections NDJSON.
+
+Supports multiple jurisdictions via --jurisdiction flag.
 
 Usage:
-  python pipeline/10_parse_xml.py --src data/subsets --out data/outputs/sections_subset.ndjson
-  python pipeline/10_parse_xml.py --src data/raw/dc-law-xml/us/dc/council/code/titles --out data/outputs/sections.ndjson
+  python pipeline/10_parse_xml.py --jurisdiction dc --src data/subsets --out data/outputs/sections_subset.ndjson
+  python pipeline/10_parse_xml.py --jurisdiction dc --src data/raw/dc-law-xml/us/dc/council/code/titles --out data/outputs/sections.ndjson
 """
 
 import argparse
-import re
 from pathlib import Path
-from lxml import etree
 from tqdm import tqdm
 
 from common import (
@@ -18,181 +18,48 @@ from common import (
     StateManager,
     setup_logging,
     PIPELINE_VERSION,
-    validate_record
 )
+from parsers import get_parser
 
 logger = setup_logging(__name__)
 
-# Namespace for DC Code XML
-NS = {"dc": "https://code.dccouncil.us/schemas/dc-library"}
 
-
-def extract_text_plain(element):
-    """Extract plain text from an XML element, recursively."""
-    # Get all text content, including nested elements
-    text_parts = []
-
-    # Get direct text
-    if element.text:
-        text_parts.append(element.text.strip())
-
-    # Get text from all child elements
-    for child in element:
-        child_text = extract_text_plain(child)
-        if child_text:
-            text_parts.append(child_text)
-        # Get tail text (text after the child element)
-        if child.tail:
-            text_parts.append(child.tail.strip())
-
-    return " ".join(part for part in text_parts if part)
-
-
-def extract_text_html(element):
-    """Extract HTML-formatted text from an XML element."""
-    # Convert XML structure to simple HTML
-    html_parts = []
-
-    # Get direct text
-    if element.text:
-        text = element.text.strip()
-        if text:
-            html_parts.append(f"<p>{text}</p>")
-
-    # Process paragraphs
-    for para in element.findall(".//dc:para", NS):
-        para_text = extract_text_plain(para)
-        if para_text:
-            html_parts.append(f"<p>{para_text}</p>")
-
-    # If no paragraphs, just return all text as a single paragraph
-    if not html_parts:
-        all_text = extract_text_plain(element)
-        if all_text:
-            html_parts.append(f"<p>{all_text}</p>")
-
-    return "\n".join(html_parts)
-
-
-def parse_section_xml(xml_path: Path) -> dict:
-    """
-    Parse a single DC Code section XML file.
-
-    Returns:
-        Dictionary with section data according to CONTRACTS.md schema
-    """
-    try:
-        tree = etree.parse(str(xml_path))
-        root = tree.getroot()
-
-        # Extract section number (ID)
-        num_elem = root.find("dc:num", NS)
-        if num_elem is None or not num_elem.text:
-            logger.warning(f"No <num> element in {xml_path}, skipping")
-            return None
-
-        section_num = num_elem.text.strip()
-
-        # Build section ID (e.g., "dc-1-101" from "1-101")
-        section_id = f"dc-{section_num.replace('.', '-')}"
-
-        # Build citation (e.g., "§ 1-101")
-        citation = f"§ {section_num}"
-
-        # Extract heading
-        heading_elem = root.find("dc:heading", NS)
-        heading = heading_elem.text.strip() if heading_elem is not None and heading_elem.text else ""
-
-        # Extract text content
-        # Get all text elements (excluding annotations)
-        text_elem = root.find("dc:text", NS)
-        if text_elem is not None:
-            text_plain = extract_text_plain(text_elem)
-            text_html = extract_text_html(text_elem)
-
-            # Also include paragraphs that are siblings of text
-            for para in root.findall("dc:para", NS):
-                para_plain = extract_text_plain(para)
-                para_html = f"<p>{para_plain}</p>"
-                text_plain += " " + para_plain
-                text_html += "\n" + para_html
-        else:
-            # No explicit text element, extract from all non-annotation children
-            text_plain = ""
-            text_html = ""
-            for child in root:
-                if child.tag.endswith("para"):
-                    para_plain = extract_text_plain(child)
-                    text_plain += " " + para_plain
-                    text_html += f"<p>{para_plain}</p>\n"
-
-        text_plain = text_plain.strip()
-        text_html = text_html.strip()
-
-        # Determine title and chapter from section number
-        # Section format is typically: TITLE-CHAPTER-SECTION
-        # e.g., "1-101" = Title 1, Chapter 1, Section 101
-        parts = section_num.split("-")
-        if len(parts) >= 2:
-            title_num = parts[0]
-            chapter_num = parts[1][:1] if parts[1] else parts[0]  # First digit of second part
-        else:
-            title_num = parts[0] if parts else "Unknown"
-            chapter_num = "Unknown"
-
-        title_label = f"Title {title_num}"
-        chapter_label = f"Chapter {chapter_num}"
-
-        # Build ancestors array
-        # For now, simplified version - in production, would parse index.xml files
-        ancestors = [
-            {"type": "title", "label": title_label, "id": f"dc-title-{title_num}"},
-            {"type": "chapter", "label": chapter_label, "id": f"dc-{title_num}-chapter-{chapter_num}"}
-        ]
-
-        # Build the section record
-        record = {
-            "id": section_id,
-            "citation": citation,
-            "heading": heading,
-            "text_plain": text_plain,
-            "text_html": text_html,
-            "ancestors": ancestors,
-            "title_label": title_label,
-            "chapter_label": chapter_label,
-        }
-
-        return record
-
-    except etree.XMLSyntaxError as e:
-        logger.error(f"XML syntax error in {xml_path}: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Error parsing {xml_path}: {e}")
-        return None
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Parse DC Code XML files into sections NDJSON"
+    arg_parser = argparse.ArgumentParser(
+        description="Parse legal code XML files into sections NDJSON"
     )
-    parser.add_argument(
+    arg_parser.add_argument(
+        "--jurisdiction",
+        default="dc",
+        help="Jurisdiction code (dc, ca, ny, etc.). Default: dc"
+    )
+    arg_parser.add_argument(
         "--src",
         required=True,
         help="Source directory containing XML files"
     )
-    parser.add_argument(
+    arg_parser.add_argument(
         "--out",
         required=True,
         help="Output NDJSON file path"
     )
-    parser.add_argument(
+    arg_parser.add_argument(
         "--limit",
         type=int,
         help="Limit number of files to process (for testing)"
     )
 
-    args = parser.parse_args()
+    args = arg_parser.parse_args()
+
+    # Get jurisdiction-specific parser
+    try:
+        parser = get_parser(args.jurisdiction)
+        logger.info(f"Using parser for jurisdiction: {args.jurisdiction}")
+    except (ValueError, NotImplementedError) as e:
+        logger.error(str(e))
+        return 1
 
     src_dir = Path(args.src)
     out_file = Path(args.out)
@@ -224,7 +91,52 @@ def main():
     if args.limit:
         xml_files = xml_files[:args.limit]
 
-    logger.info(f"Found {len(xml_files)} XML files to process")
+    logger.info(f"Found {len(xml_files)} section XML files to process")
+
+    # =============================================================================
+    # PASS 1: Parse index.xml files to build hierarchical structure
+    # =============================================================================
+    logger.info("Pass 1: Parsing index.xml files for hierarchical structure")
+
+    # Find all index.xml files (including in root and subdirectories)
+    index_files = sorted(list(src_dir.rglob("index.xml")))
+    logger.info(f"Found {len(index_files)} index.xml files")
+
+    # Build hierarchy map: section_id -> List[Ancestor]
+    hierarchy_map = {}
+    all_structures = []
+
+    for index_file in tqdm(index_files, desc="Parsing index files", unit="file"):
+        hierarchy_data = parser.parse_hierarchy(index_file)
+
+        # Collect structure nodes
+        structures = hierarchy_data.get("structures", [])
+        all_structures.extend(structures)
+
+        # Merge section-to-ancestors mappings
+        section_ancestors = hierarchy_data.get("section_ancestors", {})
+        hierarchy_map.update(section_ancestors)
+
+    logger.info(
+        f"Pass 1 complete: {len(all_structures)} structure nodes, "
+        f"{len(hierarchy_map)} sections mapped to ancestors"
+    )
+
+    # Write structure.ndjson output
+    structure_out_file = out_file.parent / out_file.name.replace(
+        "sections", "structure"
+    )
+    with NDJSONWriter(str(structure_out_file)) as structure_writer:
+        for structure in all_structures:
+            record = structure.model_dump(exclude_none=True)
+            structure_writer.write(record)
+
+    logger.info(f"Structure output written to: {structure_out_file}")
+
+    # =============================================================================
+    # PASS 2: Parse section XML files with full ancestor information
+    # =============================================================================
+    logger.info("Pass 2: Parsing section XML files")
 
     # Track statistics
     processed_count = state.get("processed_count", 0)
@@ -239,20 +151,23 @@ def main():
             if processed_count > 0 and xml_files.index(xml_file) < processed_count:
                 continue
 
-            # Parse the section
-            record = parse_section_xml(xml_file)
+            # Extract section ID from filename to lookup ancestors
+            # Filename format: "1-101.xml" -> section_id: "dc-1-101"
+            section_filename = xml_file.stem
+            section_id = f"{args.jurisdiction}-{section_filename.replace('.', '-')}"
 
-            if record:
-                # Validate against schema
-                required_fields = ["id", "citation", "heading", "text_plain",
-                                 "text_html", "ancestors", "title_label", "chapter_label"]
+            # Lookup pre-computed ancestors from Pass 1
+            ancestors = hierarchy_map.get(section_id)
 
-                if validate_record(record, required_fields):
-                    writer.write(record)
-                    success_count += 1
-                else:
-                    logger.error(f"Invalid record from {xml_file}")
-                    error_count += 1
+            # Parse the section using jurisdiction-specific parser
+            # Pass ancestors if available, otherwise parser will use heuristic
+            section = parser.parse_section(xml_file, ancestors=ancestors)
+
+            if section:
+                # Convert Pydantic model to dict for NDJSON output
+                record = section.model_dump(exclude_none=True)
+                writer.write(record)
+                success_count += 1
             else:
                 error_count += 1
 

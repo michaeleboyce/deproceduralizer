@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { dcSections } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { sections } from "@/db/schema";
+import { eq, and } from "drizzle-orm";
 
 /**
  * GET /api/filters/chapters?title=Title+1
@@ -13,26 +13,34 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const title = searchParams.get("title");
 
+    // Hardcode jurisdiction to 'dc' for now (transparent to user)
+    const jurisdiction = 'dc';
+
     // Build query conditionally
     const query = db
       .selectDistinct({
-        chapter: dcSections.chapterLabel,
+        chapter: sections.chapterLabel,
       })
-      .from(dcSections)
+      .from(sections)
       .$dynamic();
 
-    // Filter by title if provided
+    // Filter by title if provided, always filter by jurisdiction
     if (title) {
       const chapters = await query
-        .where(eq(dcSections.titleLabel, title))
-        .orderBy(dcSections.chapterLabel);
+        .where(and(
+          eq(sections.jurisdiction, jurisdiction),
+          eq(sections.titleLabel, title)
+        ))
+        .orderBy(sections.chapterLabel);
 
       return NextResponse.json({
         chapters: chapters.map((c) => c.chapter),
       });
     }
 
-    const chapters = await query.orderBy(dcSections.chapterLabel);
+    const chapters = await query
+      .where(eq(sections.jurisdiction, jurisdiction))
+      .orderBy(sections.chapterLabel);
 
     return NextResponse.json({
       chapters: chapters.map((c) => c.chapter),

@@ -434,7 +434,7 @@ function ReportingPageContent() {
                     </span>
                   )}
                   {appliedTitle && (
-                    <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
+                    <span className="bg-sky-100 text-sky-800 px-3 py-1 rounded-full text-sm">
                       Title: {appliedTitle}
                     </span>
                   )}

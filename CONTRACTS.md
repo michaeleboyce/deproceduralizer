@@ -2,6 +2,63 @@
 
 This document defines the NDJSON schemas that each track produces and consumes. All files use newline-delimited JSON (one JSON object per line).
 
+## Schema Validation
+
+**As of Pipeline Version 0.2.0**, all LLM output schemas are enforced using **Pydantic models** with automatic validation via the Instructor library.
+
+### Implementation
+
+All schema definitions in this document are implemented as Pydantic models in:
+- **Source**: `pipeline/models.py`
+- **Validation**: Automatic via `pipeline/llm_client.py` (wraps Gemini/Ollama APIs)
+
+### Benefits
+
+1. **Type Safety**: Field types are enforced at runtime with automatic validation
+2. **Automatic Retry**: Invalid LLM responses trigger automatic retries (up to 3 attempts)
+3. **Single Source of Truth**: Schema definitions live in code, not documentation
+4. **Field Validation**: Custom validators ensure data quality (e.g., date formats, value ranges)
+
+### Model Reference
+
+| Schema | Pydantic Model | Location |
+|--------|----------------|----------|
+| `sections.ndjson` | `Section` | `pipeline/models.py:114-161` |
+| `structure.ndjson` | `StructureNode` | `pipeline/models.py:52-107` |
+| `refs.ndjson` | `CrossReference` | `pipeline/models.py:169-195` |
+| `deadlines.ndjson` | `Deadline` | `pipeline/models.py:202-235` |
+| `amounts.ndjson` | `Amount` | `pipeline/models.py:237-269` |
+| `obligations_enhanced.ndjson` | `Obligation` | `pipeline/models.py:271-311` |
+| `similarities.ndjson` | `SimilarityPair` | `pipeline/models.py:318-370` |
+| `reporting.ndjson` | `ReportingRequirement` | `pipeline/models.py:377-428` |
+| `similarity_classifications.ndjson` | `SimilarityClassification` | `pipeline/models.py:435-518` |
+
+### Example: LLM Output Validation
+
+Before refactoring (brittle regex parsing):
+```python
+# 40+ lines of manual JSON parsing and field validation
+parsed = parse_llm_json(response_text)
+if "has_reporting_requirement" not in parsed:
+    logger.error("Missing field!")
+    return None
+```
+
+After refactoring (automatic validation):
+```python
+from llm_client import LLMClient
+from models import ReportingRequirement
+
+client = LLMClient()
+response = client.generate(
+    prompt=prompt,
+    response_model=ReportingRequirement  # ← Automatic validation!
+)
+# response.data is a validated ReportingRequirement instance
+```
+
+---
+
 ## Track A Output → Track B Input
 
 ### sections.ndjson
@@ -36,6 +93,49 @@ This document defines the NDJSON schemas that each track produces and consumes. 
   - Each ancestor: `{type: string, label: string, id: string}`
 - `title_label` (string, required): Title number/name for filtering
 - `chapter_label` (string, required): Chapter number/name for filtering
+
+---
+
+### structure.ndjson
+
+**Producer**: `pipeline/10_parse_xml.py` (Pass 1 - index.xml parsing)
+**Consumer**: `dbtools/load_structure.py`
+**Location**: `data/outputs/structure.ndjson` or `data/outputs/structure_subset.ndjson`
+
+```json
+{
+  "jurisdiction": "dc",
+  "id": "dc-title-1",
+  "parent_id": null,
+  "level": "title",
+  "label": "Title 1",
+  "heading": "Government Organization.",
+  "ordinal": 1
+}
+```
+
+**Field Specifications**:
+- `jurisdiction` (string, required): Jurisdiction code (e.g., "dc", "ca", "ny")
+- `id` (string, required): Unique node identifier (e.g., "dc-title-1", "dc-1-chapter-2")
+- `parent_id` (string, nullable): Parent node ID (null for top-level titles)
+- `level` (string, required): Hierarchy level (title, chapter, subchapter, part, subpart)
+- `label` (string, required): Display label (e.g., "Title 1", "Chapter 3", "Subchapter II")
+- `heading` (string, required): Full heading text from index.xml
+- `ordinal` (integer, required): Sort order within parent (1-based index)
+
+**Notes**:
+- One record per hierarchical node in the legal code structure
+- Used to build navigation trees and breadcrumbs in UI
+- Parent-child relationships enable recursive tree traversal
+- Not all levels exist for every path (e.g., some titles skip directly to chapters)
+
+**Example hierarchy**:
+```
+dc-title-1 (parent_id: null, level: title)
+└── dc-title-1-chapter-1 (parent_id: dc-title-1, level: chapter)
+    └── dc-title-1-chapter-1-subchapter-ii (parent_id: dc-title-1-chapter-1, level: subchapter)
+        └── dc-title-1-chapter-1-subchapter-ii-part-a (parent_id: dc-title-1-chapter-1-subchapter-ii, level: part)
+```
 
 ---
 

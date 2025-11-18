@@ -1,160 +1,52 @@
 #!/usr/bin/env python3
 """
-Load DC Code section similarity classifications from NDJSON into the database.
+Load section similarity classifications from NDJSON into the database.
 
-Features:
-- Batch inserts (configurable batch size)
-- Resume from checkpoint (.state file)
-- Progress bar with tqdm
-- ON CONFLICT DO UPDATE for re-computation support
+Refactored to use BaseLoader for DRY principles.
+Supports multi-jurisdiction schema.
 """
 
 import argparse
-import json
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
-import psycopg2
 from psycopg2.extras import execute_batch
-from tqdm import tqdm
+
+# Import BaseLoader
+from dbtools.common import BaseLoader
 
 
-class ClassificationLoader:
+class ClassificationsLoader(BaseLoader):
     """Loads similarity classifications from NDJSON to database with resume capability."""
 
-    def __init__(
-        self,
-        database_url: str,
-        input_file: Path,
-        batch_size: int = 500,
-        state_file: Optional[Path] = None
-    ):
-        self.database_url = database_url
-        self.input_file = input_file
-        self.batch_size = batch_size
-        self.state_file = state_file or input_file.with_suffix('.state')
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.updated_count = 0  # Track updates separately from inserts
 
-        # Statistics
-        self.inserted_count = 0
-        self.updated_count = 0
-        self.error_count = 0
+    def validate_record(self, record):
+        """Validate a classification record has required fields."""
+        required = ['section_a', 'section_b', 'classification', 'explanation',
+                   'model_used', 'analyzed_at']
 
-    def get_checkpoint(self) -> int:
-        """Get the last processed byte offset from state file."""
-        if self.state_file.exists():
-            with open(self.state_file, 'r') as f:
-                data = json.load(f)
-                return data.get('byte_offset', 0)
-        return 0
+        for field in required:
+            if field not in record:
+                print(f"Warning: Skipping record missing field '{field}'", file=sys.stderr)
+                return False
 
-    def save_checkpoint(self, byte_offset: int):
-        """Save current byte offset to state file."""
-        with open(self.state_file, 'w') as f:
-            json.dump({
-                'byte_offset': byte_offset,
-                'inserted': self.inserted_count,
-                'updated': self.updated_count,
-                'errors': self.error_count
-            }, f)
-
-    def count_lines(self) -> int:
-        """Count total lines in input file for progress bar."""
-        with open(self.input_file, 'r') as f:
-            return sum(1 for _ in f)
-
-    def load_classifications(self):
-        """Load classifications from NDJSON file into database."""
-        # Get starting position
-        start_offset = self.get_checkpoint()
-
-        # Count total lines for progress
-        total_lines = self.count_lines()
-
-        # Connect to database
-        conn = psycopg2.connect(self.database_url)
-        conn.autocommit = False
-        cursor = conn.cursor()
-
-        try:
-            batch = []
-            current_offset = 0
-            lines_processed = 0
-
-            with open(self.input_file, 'r') as f:
-                # Skip to checkpoint
-                if start_offset > 0:
-                    f.seek(start_offset)
-                    current_offset = start_offset
-
-                # Progress bar
-                pbar = tqdm(
-                    total=total_lines,
-                    initial=lines_processed,
-                    desc="Loading classifications",
-                    unit="pairs"
-                )
-
-                for line in f:
-                    try:
-                        classification = json.loads(line)
-                        batch.append(classification)
-
-                        # Process batch when full
-                        if len(batch) >= self.batch_size:
-                            self._insert_batch(cursor, batch)
-                            conn.commit()
-                            batch = []
-
-                            # Update checkpoint
-                            current_offset = f.tell()
-                            self.save_checkpoint(current_offset)
-
-                        lines_processed += 1
-                        pbar.update(1)
-                        pbar.set_postfix({
-                            'inserted': self.inserted_count,
-                            'updated': self.updated_count,
-                            'errors': self.error_count
-                        })
-
-                    except json.JSONDecodeError as e:
-                        self.error_count += 1
-                        print(f"Error parsing JSON: {e}", file=sys.stderr)
-                        continue
-
-                # Process remaining batch
-                if batch:
-                    self._insert_batch(cursor, batch)
-                    conn.commit()
-                    self.save_checkpoint(f.tell())
-
-                pbar.close()
-
-            print(f"\n✓ Load complete:")
-            print(f"  - Inserted: {self.inserted_count}")
-            print(f"  - Updated: {self.updated_count}")
-            print(f"  - Errors: {self.error_count}")
-
-        except Exception as e:
-            conn.rollback()
-            print(f"Error during load: {e}", file=sys.stderr)
-            raise
-        finally:
-            cursor.close()
-            conn.close()
+        return True
 
     def _insert_batch(self, cursor, batch):
         """Insert a batch of classifications with ON CONFLICT DO UPDATE."""
         # SQL for upsert - allows re-running with updated classifications
         sql = """
-            INSERT INTO dc_section_similarity_classifications
-              (section_a, section_b, classification, explanation, model_used, analyzed_at)
+            INSERT INTO section_similarity_classifications
+              (jurisdiction, section_a, section_b, classification, explanation,
+               model_used, analyzed_at)
             VALUES
-              (%(section_a)s, %(section_b)s, %(classification)s, %(explanation)s,
-               %(model_used)s, %(analyzed_at)s)
-            ON CONFLICT (section_a, section_b) DO UPDATE
+              (%(jurisdiction)s, %(section_a)s, %(section_b)s, %(classification)s,
+               %(explanation)s, %(model_used)s, %(analyzed_at)s)
+            ON CONFLICT (jurisdiction, section_a, section_b) DO UPDATE
               SET classification = EXCLUDED.classification,
                   explanation = EXCLUDED.explanation,
                   model_used = EXCLUDED.model_used,
@@ -163,13 +55,19 @@ class ClassificationLoader:
 
         try:
             # Count before insert to track new vs updated
-            cursor.execute("SELECT COUNT(*) FROM dc_section_similarity_classifications")
+            cursor.execute(
+                "SELECT COUNT(*) FROM section_similarity_classifications WHERE jurisdiction = %s",
+                (self.jurisdiction,)
+            )
             before_count = cursor.fetchone()[0]
 
             execute_batch(cursor, sql, batch)
 
             # Count after to determine insertions vs updates
-            cursor.execute("SELECT COUNT(*) FROM dc_section_similarity_classifications")
+            cursor.execute(
+                "SELECT COUNT(*) FROM section_similarity_classifications WHERE jurisdiction = %s",
+                (self.jurisdiction,)
+            )
             after_count = cursor.fetchone()[0]
 
             inserted = after_count - before_count
@@ -187,7 +85,7 @@ class ClassificationLoader:
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Load similarity classifications from NDJSON into database"
+        description="Load section similarity classifications from NDJSON into database"
     )
     parser.add_argument(
         '--input',
@@ -199,7 +97,13 @@ def main():
         '--batch-size',
         type=int,
         default=int(os.getenv('LOADER_BATCH_SIZE', '500')),
-        help='Number of rows per batch (default: 500 or LOADER_BATCH_SIZE env)'
+        help='Number of rows per batch (default: 500)'
+    )
+    parser.add_argument(
+        '--jurisdiction',
+        type=str,
+        default='dc',
+        help='Jurisdiction code (default: dc)'
     )
     parser.add_argument(
         '--state-file',
@@ -221,14 +125,20 @@ def main():
         sys.exit(1)
 
     # Create loader and run
-    loader = ClassificationLoader(
+    loader = ClassificationsLoader(
         database_url=database_url,
         input_file=args.input,
         batch_size=args.batch_size,
-        state_file=args.state_file
+        state_file=args.state_file,
+        jurisdiction=args.jurisdiction
     )
 
-    loader.load_classifications()
+    # Run the loader (BaseLoader handles all the complexity!)
+    loader.run()
+
+    # Print additional stats (updated count)
+    if loader.updated_count > 0:
+        print(f"  - Updated: {loader.updated_count}")
 
 
 if __name__ == '__main__':

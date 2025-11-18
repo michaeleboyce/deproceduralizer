@@ -35,6 +35,9 @@ data/outputs/*
 !data/interim/.gitkeep
 !data/outputs/.gitkeep
 
+# Codebase exports
+exports/
+
 # Pipeline state files
 *.state
 *.ckpt

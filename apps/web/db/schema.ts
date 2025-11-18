@@ -1,11 +1,24 @@
-import { pgTable, text, boolean, jsonb, timestamp, bigserial, integer, bigint, real, index, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, jsonb, timestamp, bigserial, integer, bigint, real, index, primaryKey, varchar } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 /**
- * DC Code sections table
+ * Jurisdictions metadata table
  */
-export const dcSections = pgTable("dc_sections", {
-  id: text("id").primaryKey(),
+export const jurisdictions = pgTable("jurisdictions", {
+  id: varchar("id", { length: 10 }).primaryKey(),
+  name: text("name").notNull(),
+  abbreviation: varchar("abbreviation", { length: 10 }).notNull(),
+  type: text("type").notNull(),
+  parserVersion: text("parser_version").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+/**
+ * Code sections table (multi-jurisdiction)
+ */
+export const sections = pgTable("sections", {
+  jurisdiction: varchar("jurisdiction", { length: 10 }).notNull().references(() => jurisdictions.id, { onDelete: "cascade" }),
+  id: text("id").notNull(),
   citation: text("citation").notNull(),
   heading: text("heading").notNull(),
   textPlain: text("text_plain").notNull(),
@@ -23,57 +36,64 @@ export const dcSections = pgTable("dc_sections", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 }, (table) => ({
-  titleIdx: index("dc_sections_title_idx").on(table.titleLabel),
-  chapterIdx: index("dc_sections_chapter_idx").on(table.chapterLabel),
-  hasReportingIdx: index("dc_sections_has_reporting_idx").on(table.hasReporting),
+  pk: primaryKey({ columns: [table.jurisdiction, table.id] }),
+  jurisdictionIdx: index("idx_sections_jurisdiction").on(table.jurisdiction),
+  titleIdx: index("idx_sections_title").on(table.jurisdiction, table.titleLabel),
+  chapterIdx: index("idx_sections_chapter").on(table.jurisdiction, table.chapterLabel),
+  hasReportingIdx: index("idx_sections_has_reporting").on(table.jurisdiction, table.hasReporting),
 }));
 
 /**
  * Cross-references between sections
  */
-export const dcSectionRefs = pgTable("dc_section_refs", {
-  fromId: text("from_id").notNull().references(() => dcSections.id, { onDelete: "cascade" }),
-  toId: text("to_id").notNull().references(() => dcSections.id, { onDelete: "cascade" }),
+export const sectionRefs = pgTable("section_refs", {
+  jurisdiction: varchar("jurisdiction", { length: 10 }).notNull(),
+  fromId: text("from_id").notNull(),
+  toId: text("to_id").notNull(),
   rawCite: text("raw_cite").notNull(),
 }, (table) => ({
-  pk: primaryKey({ columns: [table.fromId, table.toId, table.rawCite] }),
-  fromIdx: index("dc_section_refs_from_idx").on(table.fromId),
-  toIdx: index("dc_section_refs_to_idx").on(table.toId),
+  pk: primaryKey({ columns: [table.jurisdiction, table.fromId, table.toId, table.rawCite] }),
+  fromIdx: index("idx_section_refs_from").on(table.jurisdiction, table.fromId),
+  toIdx: index("idx_section_refs_to").on(table.jurisdiction, table.toId),
 }));
 
 /**
  * Deadlines extracted from sections
  */
-export const dcSectionDeadlines = pgTable("dc_section_deadlines", {
-  id: bigserial("id", { mode: "number" }).primaryKey(),
-  sectionId: text("section_id").notNull().references(() => dcSections.id, { onDelete: "cascade" }),
+export const sectionDeadlines = pgTable("section_deadlines", {
+  id: bigserial("id", { mode: "number" }),
+  jurisdiction: varchar("jurisdiction", { length: 10 }).notNull(),
+  sectionId: text("section_id").notNull(),
   phrase: text("phrase").notNull(),
   days: integer("days").notNull(),
   kind: text("kind").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 }, (table) => ({
-  sectionIdx: index("dc_section_deadlines_section_idx").on(table.sectionId),
-  daysIdx: index("dc_section_deadlines_days_idx").on(table.days),
+  pk: primaryKey({ columns: [table.jurisdiction, table.id] }),
+  sectionIdx: index("idx_section_deadlines_section").on(table.jurisdiction, table.sectionId),
+  daysIdx: index("idx_section_deadlines_days").on(table.days),
 }));
 
 /**
  * Dollar amounts extracted from sections
  */
-export const dcSectionAmounts = pgTable("dc_section_amounts", {
-  id: bigserial("id", { mode: "number" }).primaryKey(),
-  sectionId: text("section_id").notNull().references(() => dcSections.id, { onDelete: "cascade" }),
+export const sectionAmounts = pgTable("section_amounts", {
+  id: bigserial("id", { mode: "number" }),
+  jurisdiction: varchar("jurisdiction", { length: 10 }).notNull(),
+  sectionId: text("section_id").notNull(),
   phrase: text("phrase").notNull(),
   amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 }, (table) => ({
-  sectionIdx: index("dc_section_amounts_section_idx").on(table.sectionId),
-  amountIdx: index("dc_section_amounts_amount_idx").on(table.amountCents),
+  pk: primaryKey({ columns: [table.jurisdiction, table.id] }),
+  sectionIdx: index("idx_section_amounts_section").on(table.jurisdiction, table.sectionId),
+  amountIdx: index("idx_section_amounts_amount").on(table.amountCents),
 }));
 
 /**
- * Global tags for categorization
+ * Global tags for categorization (jurisdiction-agnostic)
  */
-export const dcGlobalTags = pgTable("dc_global_tags", {
+export const globalTags = pgTable("global_tags", {
   tag: text("tag").primaryKey(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
@@ -81,44 +101,49 @@ export const dcGlobalTags = pgTable("dc_global_tags", {
 /**
  * Section-to-tag mapping
  */
-export const dcSectionTags = pgTable("dc_section_tags", {
-  sectionId: text("section_id").notNull().references(() => dcSections.id, { onDelete: "cascade" }),
-  tag: text("tag").notNull().references(() => dcGlobalTags.tag, { onDelete: "cascade" }),
+export const sectionTags = pgTable("section_tags", {
+  jurisdiction: varchar("jurisdiction", { length: 10 }).notNull(),
+  sectionId: text("section_id").notNull(),
+  tag: text("tag").notNull().references(() => globalTags.tag, { onDelete: "cascade" }),
 }, (table) => ({
-  pk: primaryKey({ columns: [table.sectionId, table.tag] }),
-  sectionIdx: index("dc_section_tags_section_idx").on(table.sectionId),
-  tagIdx: index("dc_section_tags_tag_idx").on(table.tag),
+  pk: primaryKey({ columns: [table.jurisdiction, table.sectionId, table.tag] }),
+  sectionIdx: index("idx_section_tags_section").on(table.jurisdiction, table.sectionId),
+  tagIdx: index("idx_section_tags_tag").on(table.tag),
 }));
 
 /**
  * Similar sections (computed via embeddings)
  */
-export const dcSectionSimilarities = pgTable("dc_section_similarities", {
-  sectionA: text("section_a").notNull().references(() => dcSections.id, { onDelete: "cascade" }),
-  sectionB: text("section_b").notNull().references(() => dcSections.id, { onDelete: "cascade" }),
+export const sectionSimilarities = pgTable("section_similarities", {
+  jurisdiction: varchar("jurisdiction", { length: 10 }).notNull(),
+  sectionA: text("section_a").notNull(),
+  sectionB: text("section_b").notNull(),
   similarity: real("similarity").notNull(),
 }, (table) => ({
-  pk: primaryKey({ columns: [table.sectionA, table.sectionB] }),
-  aIdx: index("dc_section_similarities_a_idx").on(table.sectionA, table.similarity),
-  bIdx: index("dc_section_similarities_b_idx").on(table.sectionB, table.similarity),
+  pk: primaryKey({ columns: [table.jurisdiction, table.sectionA, table.sectionB] }),
+  aIdx: index("idx_section_similarities_a").on(table.jurisdiction, table.sectionA, table.similarity),
+  bIdx: index("idx_section_similarities_b").on(table.jurisdiction, table.sectionB, table.similarity),
 }));
 
 /**
  * Highlight phrases for reporting requirements
  */
-export const dcSectionHighlights = pgTable("dc_section_highlights", {
-  id: bigserial("id", { mode: "number" }).primaryKey(),
-  sectionId: text("section_id").notNull().references(() => dcSections.id, { onDelete: "cascade" }),
+export const sectionHighlights = pgTable("section_highlights", {
+  id: bigserial("id", { mode: "number" }),
+  jurisdiction: varchar("jurisdiction", { length: 10 }).notNull(),
+  sectionId: text("section_id").notNull(),
   phrase: text("phrase").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 }, (table) => ({
-  sectionIdx: index("dc_section_highlights_section_idx").on(table.sectionId),
+  pk: primaryKey({ columns: [table.jurisdiction, table.id] }),
+  sectionIdx: index("idx_section_highlights_section").on(table.jurisdiction, table.sectionId),
 }));
 
 /**
  * LLM-based classifications of similarity relationships
  */
-export const dcSectionSimilarityClassifications = pgTable("dc_section_similarity_classifications", {
+export const sectionSimilarityClassifications = pgTable("section_similarity_classifications", {
+  jurisdiction: varchar("jurisdiction", { length: 10 }).notNull(),
   sectionA: text("section_a").notNull(),
   sectionB: text("section_b").notNull(),
   classification: text("classification").notNull(),
@@ -127,17 +152,44 @@ export const dcSectionSimilarityClassifications = pgTable("dc_section_similarity
   analyzedAt: timestamp("analyzed_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 }, (table) => ({
-  pk: primaryKey({ columns: [table.sectionA, table.sectionB] }),
-  classificationIdx: index("dc_section_similarity_classifications_classification_idx").on(table.classification),
-  modelIdx: index("dc_section_similarity_classifications_model_idx").on(table.modelUsed),
+  pk: primaryKey({ columns: [table.jurisdiction, table.sectionA, table.sectionB] }),
+  classificationIdx: index("idx_section_similarity_classifications_classification").on(table.jurisdiction, table.classification),
+  modelIdx: index("idx_section_similarity_classifications_model").on(table.modelUsed),
+}));
+
+/**
+ * Hierarchical structure table for legal code organization
+ */
+export const structure = pgTable("structure", {
+  jurisdiction: varchar("jurisdiction", { length: 10 }).notNull().references(() => jurisdictions.id, { onDelete: "cascade" }),
+  id: text("id").notNull(),
+  parentId: text("parent_id"),
+  level: text("level").notNull(), // 'title', 'subtitle', 'chapter', 'subchapter', 'section'
+  label: text("label").notNull(),
+  heading: text("heading"),
+  ordinal: integer("ordinal"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.jurisdiction, table.id] }),
+  jurisdictionIdx: index("idx_structure_jurisdiction").on(table.jurisdiction),
+  parentIdx: index("idx_structure_parent").on(table.jurisdiction, table.parentId),
+  levelIdx: index("idx_structure_level").on(table.jurisdiction, table.level),
+  ordinalIdx: index("idx_structure_ordinal").on(table.jurisdiction, table.ordinal),
 }));
 
 // Type exports for use in application code
-export type DcSection = typeof dcSections.$inferSelect;
-export type NewDcSection = typeof dcSections.$inferInsert;
+export type Jurisdiction = typeof jurisdictions.$inferSelect;
+export type NewJurisdiction = typeof jurisdictions.$inferInsert;
 
-export type DcSectionRef = typeof dcSectionRefs.$inferSelect;
-export type DcSectionDeadline = typeof dcSectionDeadlines.$inferSelect;
-export type DcSectionAmount = typeof dcSectionAmounts.$inferSelect;
-export type DcSectionSimilarity = typeof dcSectionSimilarities.$inferSelect;
-export type DcSectionSimilarityClassification = typeof dcSectionSimilarityClassifications.$inferSelect;
+export type Section = typeof sections.$inferSelect;
+export type NewSection = typeof sections.$inferInsert;
+
+export type SectionRef = typeof sectionRefs.$inferSelect;
+export type SectionDeadline = typeof sectionDeadlines.$inferSelect;
+export type SectionAmount = typeof sectionAmounts.$inferSelect;
+export type SectionSimilarity = typeof sectionSimilarities.$inferSelect;
+export type SectionSimilarityClassification = typeof sectionSimilarityClassifications.$inferSelect;
+export type SectionHighlight = typeof sectionHighlights.$inferSelect;
+export type SectionTag = typeof sectionTags.$inferSelect;
+export type GlobalTag = typeof globalTags.$inferSelect;
+export type Structure = typeof structure.$inferSelect;

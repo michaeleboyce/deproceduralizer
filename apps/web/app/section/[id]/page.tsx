@@ -2,15 +2,15 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import {
-  dcSections,
-  dcSectionDeadlines,
-  dcSectionAmounts,
-  dcSectionRefs,
-  dcSectionSimilarities,
-  dcSectionSimilarityClassifications,
-  dcSectionHighlights,
-  dcSectionTags,
-  dcGlobalTags,
+  sections,
+  sectionDeadlines,
+  sectionAmounts,
+  sectionRefs,
+  sectionSimilarities,
+  sectionSimilarityClassifications,
+  sectionHighlights,
+  sectionTags,
+  globalTags,
 } from "@/db/schema";
 import { eq, or, and, sql } from "drizzle-orm";
 import SimilarSectionsList from "@/components/SimilarSectionsList";
@@ -52,11 +52,17 @@ export default async function SectionPage({
 }) {
   const { id } = await params;
 
+  // Hardcode jurisdiction to 'dc' for now (transparent to user)
+  const jurisdiction = 'dc';
+
   // Fetch section data
   const [section] = await db
     .select()
-    .from(dcSections)
-    .where(eq(dcSections.id, id))
+    .from(sections)
+    .where(and(
+      eq(sections.jurisdiction, jurisdiction),
+      eq(sections.id, id)
+    ))
     .limit(1);
 
   if (!section) {
@@ -66,90 +72,122 @@ export default async function SectionPage({
   // Fetch deadlines
   const deadlines = await db
     .select({
-      phrase: dcSectionDeadlines.phrase,
-      days: dcSectionDeadlines.days,
-      kind: dcSectionDeadlines.kind,
+      phrase: sectionDeadlines.phrase,
+      days: sectionDeadlines.days,
+      kind: sectionDeadlines.kind,
     })
-    .from(dcSectionDeadlines)
-    .where(eq(dcSectionDeadlines.sectionId, id));
+    .from(sectionDeadlines)
+    .where(and(
+      eq(sectionDeadlines.jurisdiction, jurisdiction),
+      eq(sectionDeadlines.sectionId, id)
+    ));
 
   // Fetch dollar amounts
   const amounts = await db
     .select({
-      phrase: dcSectionAmounts.phrase,
-      amountCents: dcSectionAmounts.amountCents,
+      phrase: sectionAmounts.phrase,
+      amountCents: sectionAmounts.amountCents,
     })
-    .from(dcSectionAmounts)
-    .where(eq(dcSectionAmounts.sectionId, id));
+    .from(sectionAmounts)
+    .where(and(
+      eq(sectionAmounts.jurisdiction, jurisdiction),
+      eq(sectionAmounts.sectionId, id)
+    ));
 
   // Fetch cross-references (both directions)
   const referencesFrom = await db
     .select({
-      id: dcSections.id,
-      citation: dcSections.citation,
-      heading: dcSections.heading,
-      rawCite: dcSectionRefs.rawCite,
+      id: sections.id,
+      citation: sections.citation,
+      heading: sections.heading,
+      rawCite: sectionRefs.rawCite,
     })
-    .from(dcSectionRefs)
-    .innerJoin(dcSections, eq(dcSectionRefs.toId, dcSections.id))
-    .where(eq(dcSectionRefs.fromId, id));
+    .from(sectionRefs)
+    .innerJoin(sections, and(
+      eq(sectionRefs.jurisdiction, sections.jurisdiction),
+      eq(sectionRefs.toId, sections.id)
+    ))
+    .where(and(
+      eq(sectionRefs.jurisdiction, jurisdiction),
+      eq(sectionRefs.fromId, id)
+    ));
 
   const referencesTo = await db
     .select({
-      id: dcSections.id,
-      citation: dcSections.citation,
-      heading: dcSections.heading,
-      rawCite: dcSectionRefs.rawCite,
+      id: sections.id,
+      citation: sections.citation,
+      heading: sections.heading,
+      rawCite: sectionRefs.rawCite,
     })
-    .from(dcSectionRefs)
-    .innerJoin(dcSections, eq(dcSectionRefs.fromId, dcSections.id))
-    .where(eq(dcSectionRefs.toId, id));
+    .from(sectionRefs)
+    .innerJoin(sections, and(
+      eq(sectionRefs.jurisdiction, sections.jurisdiction),
+      eq(sectionRefs.fromId, sections.id)
+    ))
+    .where(and(
+      eq(sectionRefs.jurisdiction, jurisdiction),
+      eq(sectionRefs.toId, id)
+    ));
 
   // Fetch similar sections (both directions: section_a and section_b) with classifications
   const similarFromA = await db
     .select({
-      id: dcSections.id,
-      citation: dcSections.citation,
-      heading: dcSections.heading,
-      similarity: dcSectionSimilarities.similarity,
-      classification: dcSectionSimilarityClassifications.classification,
-      explanation: dcSectionSimilarityClassifications.explanation,
-      modelUsed: dcSectionSimilarityClassifications.modelUsed,
+      id: sections.id,
+      citation: sections.citation,
+      heading: sections.heading,
+      similarity: sectionSimilarities.similarity,
+      classification: sectionSimilarityClassifications.classification,
+      explanation: sectionSimilarityClassifications.explanation,
+      modelUsed: sectionSimilarityClassifications.modelUsed,
     })
-    .from(dcSectionSimilarities)
-    .innerJoin(dcSections, eq(dcSectionSimilarities.sectionB, dcSections.id))
+    .from(sectionSimilarities)
+    .innerJoin(sections, and(
+      eq(sectionSimilarities.jurisdiction, sections.jurisdiction),
+      eq(sectionSimilarities.sectionB, sections.id)
+    ))
     .leftJoin(
-      dcSectionSimilarityClassifications,
+      sectionSimilarityClassifications,
       and(
-        eq(dcSectionSimilarityClassifications.sectionA, dcSectionSimilarities.sectionA),
-        eq(dcSectionSimilarityClassifications.sectionB, dcSectionSimilarities.sectionB)
+        eq(sectionSimilarityClassifications.jurisdiction, sectionSimilarities.jurisdiction),
+        eq(sectionSimilarityClassifications.sectionA, sectionSimilarities.sectionA),
+        eq(sectionSimilarityClassifications.sectionB, sectionSimilarities.sectionB)
       )
     )
-    .where(eq(dcSectionSimilarities.sectionA, id))
-    .orderBy(sql`${dcSectionSimilarities.similarity} DESC`)
+    .where(and(
+      eq(sectionSimilarities.jurisdiction, jurisdiction),
+      eq(sectionSimilarities.sectionA, id)
+    ))
+    .orderBy(sql`${sectionSimilarities.similarity} DESC`)
     .limit(5);
 
   const similarFromB = await db
     .select({
-      id: dcSections.id,
-      citation: dcSections.citation,
-      heading: dcSections.heading,
-      similarity: dcSectionSimilarities.similarity,
-      classification: dcSectionSimilarityClassifications.classification,
-      explanation: dcSectionSimilarityClassifications.explanation,
-      modelUsed: dcSectionSimilarityClassifications.modelUsed,
+      id: sections.id,
+      citation: sections.citation,
+      heading: sections.heading,
+      similarity: sectionSimilarities.similarity,
+      classification: sectionSimilarityClassifications.classification,
+      explanation: sectionSimilarityClassifications.explanation,
+      modelUsed: sectionSimilarityClassifications.modelUsed,
     })
-    .from(dcSectionSimilarities)
-    .innerJoin(dcSections, eq(dcSectionSimilarities.sectionA, dcSections.id))
+    .from(sectionSimilarities)
+    .innerJoin(sections, and(
+      eq(sectionSimilarities.jurisdiction, sections.jurisdiction),
+      eq(sectionSimilarities.sectionA, sections.id)
+    ))
     .leftJoin(
-      dcSectionSimilarityClassifications,
+      sectionSimilarityClassifications,
       and(
-        eq(dcSectionSimilarityClassifications.sectionA, dcSectionSimilarities.sectionA),
-        eq(dcSectionSimilarityClassifications.sectionB, dcSectionSimilarities.sectionB)
+        eq(sectionSimilarityClassifications.jurisdiction, sectionSimilarities.jurisdiction),
+        eq(sectionSimilarityClassifications.sectionA, sectionSimilarities.sectionA),
+        eq(sectionSimilarityClassifications.sectionB, sectionSimilarities.sectionB)
       )
     )
-    .where(eq(dcSectionSimilarities.sectionB, id))
-    .orderBy(sql`${dcSectionSimilarities.similarity} DESC`)
+    .where(and(
+      eq(sectionSimilarities.jurisdiction, jurisdiction),
+      eq(sectionSimilarities.sectionB, id)
+    ))
+    .orderBy(sql`${sectionSimilarities.similarity} DESC`)
     .limit(5);
 
   // Combine and sort similar sections
@@ -160,19 +198,25 @@ export default async function SectionPage({
   // Fetch reporting highlight phrases
   const phrasesToHighlight = await db
     .select({
-      phrase: dcSectionHighlights.phrase,
+      phrase: sectionHighlights.phrase,
     })
-    .from(dcSectionHighlights)
-    .where(eq(dcSectionHighlights.sectionId, id));
+    .from(sectionHighlights)
+    .where(and(
+      eq(sectionHighlights.jurisdiction, jurisdiction),
+      eq(sectionHighlights.sectionId, id)
+    ));
 
   // Fetch reporting tags
-  const sectionTags = await db
+  const sectionTagsData = await db
     .select({
-      tag: dcGlobalTags.tag,
+      tag: globalTags.tag,
     })
-    .from(dcSectionTags)
-    .innerJoin(dcGlobalTags, eq(dcSectionTags.tag, dcGlobalTags.tag))
-    .where(eq(dcSectionTags.sectionId, id));
+    .from(sectionTags)
+    .innerJoin(globalTags, eq(sectionTags.tag, globalTags.tag))
+    .where(and(
+      eq(sectionTags.jurisdiction, jurisdiction),
+      eq(sectionTags.sectionId, id)
+    ));
 
   // Apply highlighting to section HTML if there are phrases
   const highlightedHtml = section.hasReporting && phrasesToHighlight.length > 0
@@ -230,9 +274,9 @@ export default async function SectionPage({
                 <span className="inline-block px-3 py-1 bg-violet-600 text-white text-sm font-semibold rounded-full">
                   Reporting Requirement
                 </span>
-                {sectionTags.length > 0 && (
+                {sectionTagsData.length > 0 && (
                   <div className="flex gap-2 flex-wrap">
-                    {sectionTags.map((tagObj, index) => (
+                    {sectionTagsData.map((tagObj, index) => (
                       <span
                         key={index}
                         className="inline-block px-2 py-0.5 bg-violet-100 text-violet-800 text-xs font-medium rounded"
@@ -343,10 +387,10 @@ export default async function SectionPage({
                       <Link
                         key={index}
                         href={`/section/${ref.id}`}
-                        className="block p-3 bg-blue-50 border border-blue-200 rounded-lg hover:border-blue-300 hover:shadow-sm transition-all"
+                        className="block p-3 bg-sky-50 border border-sky-200 rounded-lg hover:border-sky-300 hover:shadow-sm transition-all"
                       >
                         <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm text-blue-600 font-medium">
+                          <span className="font-mono text-sm text-sky-600 font-medium">
                             {ref.citation}
                           </span>
                           <span className="text-slate-600">→</span>
@@ -371,10 +415,10 @@ export default async function SectionPage({
                       <Link
                         key={index}
                         href={`/section/${ref.id}`}
-                        className="block p-3 bg-indigo-50 border border-indigo-200 rounded-lg hover:border-indigo-300 hover:shadow-sm transition-all"
+                        className="block p-3 bg-sky-50 border border-sky-200 rounded-lg hover:border-sky-300 hover:shadow-sm transition-all"
                       >
                         <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm text-indigo-600 font-medium">
+                          <span className="font-mono text-sm text-sky-600 font-medium">
                             {ref.citation}
                           </span>
                           <span className="text-slate-600">←</span>

@@ -421,7 +421,7 @@ function SearchPageContent() {
                       </dd>
                     </div>
                     <div className="flex gap-2">
-                      <dt className="font-semibold text-blue-700 min-w-[100px]">Superseded:</dt>
+                      <dt className="font-semibold text-sky-700 min-w-[100px]">Superseded:</dt>
                       <dd className="text-slate-600">
                         One section replaces or updates the other
                       </dd>

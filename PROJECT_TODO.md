@@ -11,6 +11,99 @@ Track development progress across all three parallel tracks (A: Pipeline, B: Dat
 
 ---
 
+## 🎯 Strategic Pivot: Deepen Before Widening
+
+**Status**: Active - This is a pivotal moment for the project
+
+### Context
+
+You have a working "vertical slice" (Titles 1-2, ~100 sections) with all features implemented. However, before scaling to the "horizontal" (full corpus of 50 titles), we must address architectural debt and functional fragility. Running the full pipeline now would generate large volumes of low-quality data that is hard to query and hard to update.
+
+### Strategy: Build Multi-Jurisdiction Foundation Now
+
+This project will expand beyond DC to support California, New York, and other legal codes. We will build jurisdiction-agnostic architecture from the start to avoid a painful refactor later.
+
+**Key Principles:**
+1. **DRY (Don't Repeat Yourself)**: Eliminate code duplication in loaders and parsers
+2. **Structured Data**: Replace brittle regex JSON parsing with validated Pydantic models
+3. **Hierarchical Integrity**: Represent law as a tree, not a flat list
+4. **Professional UX**: Build a legal intelligence platform, not just a search tool
+5. **Multi-Jurisdiction**: Design schema and pipeline for DC, CA, NY, etc. from day one
+
+### Three Strategic Tracks
+
+**Track A: Architecture & Data Engineering**
+- Create `BaseLoader` abstract class (DRY principle)
+- Implement two-pass XML parsing (structure → content)
+- Add multi-jurisdiction support to all tables (jurisdiction column + composite PKs)
+- Replace regex JSON parsing with Pydantic + Instructor
+
+**Track B: Advanced Intelligence**
+- Replace regex obligations with LLM-based classification
+- Optimize similarity search with FAISS IVF indexing (100x speedup)
+- Add jurisdiction-aware loaders
+
+**Track C: "BCG-Level" UX Polish**
+- In-text citation hyperlinking
+- Citation graph visualization
+- Legislative conflict dashboard
+- Hover cards for previews
+- Professional typography and layout
+
+### Execution Plan
+
+- **Milestones 0-5**: ✅ Complete (vertical slice working)
+- **Milestones 5.1-5.3**: 🏗️ Refinement phase (NEW - do these next)
+- **Milestones 6-8**: ⏸️ PAUSED until refinement complete
+
+After refinement, we will process DC's full corpus (Milestone 6), then easily expand to California, New York, and other jurisdictions without refactoring.
+
+### Milestone Dependency Graph
+
+```
+Milestones 0-5: ✅ Complete
+    |
+    v
+Milestone 5.1: Architecture Hardening (DRY, Multi-Jurisdiction, Hierarchy)
+    |
+    v
+Milestone 5.2: Enhanced Intelligence (Pydantic/Instructor, IVF, Enhanced Obligations)
+    |    \
+    |     \------- (Milestone 5.5 can run in parallel with 5.3)
+    |              (Applies 5.2's improvements)
+    v
+Milestone 5.3: "BCG-Level" UX (shadcn/ui, Citations, Graphs, Dashboards)
+    |
+    v
+Milestone 5.5: Similarity Classification (If not done in parallel)
+    |
+    v
+Milestone 6: Medium Corpus (Titles 1-10, ~500-600 sections)
+    |
+    v
+Milestone 7: Reporting Deep Analysis (Enhanced metadata, frequency, entities)
+    |
+    v
+Milestone 8: Full DC Code Corpus (~50 titles) + Deploy to Production
+    |
+    v
+Milestone 9: (Future) Add California, New York, other jurisdictions
+```
+
+**Key Dependencies:**
+- **5.1 BLOCKS 5.2**: Pydantic models (5.1) needed before instructor refactor (5.2)
+- **5.1 BLOCKS 5.3**: Multi-jurisdiction schema (5.1) needed before UI updates (5.3)
+- **5.2 BLOCKS 5.5**: Structured LLM patterns (5.2) should be applied to similarity classification (5.5)
+- **5.1 + 5.2 + 5.3 + 5.5 BLOCK 6**: Refinement must be complete before scaling to medium corpus
+- **6 BLOCKS 7**: Medium corpus provides realistic data for reporting deep analysis
+- **7 BLOCKS 8**: Reporting enhancements should be tested before full corpus
+
+**Parallelization Opportunities:**
+- Milestone 5.5 can run in parallel with 5.3 if resources allow (both are Track C heavy)
+- Within milestones, Track A/B/C tasks can often run in parallel (see individual BLOCKS/REQUIRES)
+
+---
+
 ## 🧱 Milestone 0: Environment Ready
 
 **Goal**: Everything installed; DB + app skeletons exist
@@ -479,18 +572,489 @@ Track development progress across all three parallel tracks (A: Pipeline, B: Dat
   - Confirmed highlight phrases (84 total) and tags (74 unique) loaded
   - Tested reporting badge, summary, and tag display
   - Verified phrase highlighting functionality
-- [ ] **C5.5** Improve overall look/feel/navigation with modern design system
-  - Create comprehensive STYLE_GUIDE.md with color palette and design tokens
-  - Implement sophisticated slate/teal color palette (replacing basic blues)
-  - Add navigation header component with breadcrumbs across all pages
-  - Enhance typography hierarchy and spacing consistency
-  - Refine component styling (buttons, badges, cards, forms)
-  - Update home page with refined hero and CTAs
-  - Update search page with cleaner filters and results layout
-  - Update section detail page with improved hierarchy
-  - Refine diff viewer colors for better readability
+- [x] **C5.5** Improve overall look/feel/navigation with modern design system
+  - Created comprehensive STYLE_GUIDE.md with color palette and design tokens ✅
+  - Implemented sophisticated slate/teal color palette (replaced all blue/indigo colors) ✅
+  - Added navigation header component with breadcrumbs across all pages ✅
+  - Enhanced typography hierarchy with system font stack in globals.css ✅
+  - Created tailwind.config.ts with design tokens and theme configuration ✅
+  - Updated search page with cleaner filters and consistent colors ✅
+  - Updated section detail page with improved hierarchy and sky colors for references ✅
+  - Updated reporting page with consistent color palette ✅
 
 **Acceptance**: ✅ **COMPLETE** - Full reporting UI with filters, badges, summaries, tags, and highlighted phrases
+
+---
+
+## 🏗️ Milestone 5.1: Architecture Hardening
+
+**Goal**: DRY principles, multi-jurisdiction support, hierarchical integrity
+**Status**: 🟡 In Progress (Track B: ✅ Complete, Track A: ⚪ Not Started, Track C: 🟢 Mostly Complete)
+
+**Rationale**: Before scaling to medium/full corpus, eliminate technical debt. Build jurisdiction-agnostic foundation to support DC, California, New York, and other legal codes without refactoring.
+
+### Track A: Pipeline Refactoring
+
+- [ ] **A5.1.1** Create `pipeline/models.py` with jurisdiction-agnostic Pydantic models (BLOCKS: A5.2.3)
+  - Define `Section`, `CrossReference`, `Obligation`, `SimilarityPair`, `ReportingRequirement`
+  - Use Field validators and aliases for data contract compatibility
+  - Support multi-jurisdiction with `jurisdiction` field
+- [ ] **A5.1.2** Create `pipeline/parsers/` module structure (BLOCKS: A5.1.4)
+  - Create `parsers/__init__.py`
+  - Create `parsers/base.py` with abstract `BaseParser` class
+  - Create `parsers/dc.py` extending `BaseParser` for DC Code XML format
+  - Add `--jurisdiction` flag to all pipeline scripts
+- [ ] **A5.1.3** Implement two-pass XML parsing in `10_parse_xml.py` (REQUIRES: A5.1.2)
+  - **Pass 1**: Parse `index.xml` files to extract hierarchical structure
+  - **Pass 2**: Parse section XMLs and attach to hierarchy
+  - Output includes correct parent/child relationships
+- [ ] **A5.1.4** Add `<history>` effective date extraction (REQUIRES: A5.1.3)
+  - Parse `<history>` tags in XML for effective dates
+  - Add `effective_date` field to sections.ndjson output
+  - Update CONTRACTS.md with new field
+
+**Acceptance**: ✅ Jurisdiction-agnostic Pydantic models exist, two-pass parsing works, effective dates extracted
+
+---
+
+### Track B: Multi-Jurisdiction Schema
+
+- [x] **B5.1.1** Create `dbtools/schema_migrations/add_multi_jurisdiction.sql` (BLOCKS: B5.1.5)
+  - Create `jurisdictions` table (id, name, abbreviation, type, parser_version)
+  - Rename all `dc_*` tables to remove `dc_` prefix:
+    - `dc_sections` → `sections`
+    - `dc_section_refs` → `section_refs`
+    - `dc_section_deadlines` → `section_deadlines`
+    - `dc_section_amounts` → `section_amounts`
+    - `dc_section_similarities` → `section_similarities`
+    - `dc_section_similarity_classifications` → `section_similarity_classifications`
+    - `dc_global_tags` → `global_tags`
+    - `dc_section_tags` → `section_tags`
+    - `dc_section_highlights` → `section_highlights`
+    - `dc_reporting_entities` → `reporting_entities`
+    - `dc_reporting_related` → `reporting_related`
+  - Add `jurisdiction` VARCHAR(10) column to all tables
+  - Update primary keys to be composite: (jurisdiction, id)
+  - Update all foreign keys to include jurisdiction
+  - Create indexes on jurisdiction column
+- [x] **B5.1.2** Create `structure` table for hierarchical law representation (REQUIRES: B5.1.1)
+  ```sql
+  CREATE TABLE structure (
+    jurisdiction VARCHAR(10) NOT NULL,
+    id TEXT NOT NULL,
+    parent_id TEXT,
+    level TEXT, -- 'title', 'subtitle', 'chapter', 'subchapter', etc.
+    label TEXT,
+    heading TEXT,
+    ordinal INTEGER,
+    PRIMARY KEY (jurisdiction, id),
+    FOREIGN KEY (jurisdiction, parent_id) REFERENCES structure(jurisdiction, id)
+  );
+  ```
+- [x] **B5.1.3** Create `dbtools/common/base_loader.py` with abstract `BaseLoader` (BLOCKS: B5.1.4)
+  - Abstract class with `abc` module
+  - Common logic: progress bars (tqdm), state files, DB connection pooling
+  - Abstract methods: `process_batch()`, `validate_record()`
+  - Implements checkpoint save/resume automatically
+  - Logging utilities
+- [x] **B5.1.4** Refactor all loaders to inherit from `BaseLoader` (REQUIRES: B5.1.3)
+  - Update `dbtools/load_sections.py`
+  - Update `dbtools/load_refs.py`
+  - Update `dbtools/load_deadlines_amounts.py`
+  - Update `dbtools/load_similarities.py`
+  - Update `dbtools/load_similarity_classifications.py`
+  - Update `dbtools/load_reporting.py`
+  - Remove duplicated code (~200+ lines eliminated)
+- [x] **B5.1.5** Run schema migration against Neon DB (REQUIRES: B5.1.1)
+  ```bash
+  psql $DATABASE_URL -f dbtools/schema_migrations/add_multi_jurisdiction.sql
+  ```
+- [x] **B5.1.6** Insert 'dc' jurisdiction into `jurisdictions` table
+  ```sql
+  INSERT INTO jurisdictions (id, name, abbreviation, type, parser_version)
+  VALUES ('dc', 'District of Columbia Code', 'DC', 'district', '0.2.0');
+  ```
+- [x] **B5.1.7** Verify schema migration successful (REQUIRES: B5.1.5, B5.1.6)
+  ```bash
+  psql $DATABASE_URL -c "\dt"  # Should show renamed tables
+  psql $DATABASE_URL -c "SELECT * FROM jurisdictions;"  # Should show DC
+  psql $DATABASE_URL -c "SELECT COUNT(*) FROM sections WHERE jurisdiction = 'dc';"  # Should match old count
+  ```
+
+**Acceptance**: ✅ Multi-jurisdiction schema live, all tables renamed, DC data migrated, BaseLoader implemented
+
+---
+
+### Track C: UI Updates for Multi-Jurisdiction
+
+- [x] **C5.1.1** Update `apps/web/db/schema.ts` to match new DB schema (REQUIRES: B5.1.5)
+  - Renamed all `dc*` table definitions → `sections`, `sectionRefs`, etc.
+  - Added `jurisdiction` varchar(10) column to all tables
+  - Updated to composite primary keys with jurisdiction
+  - Added `jurisdictions` and `structure` table definitions
+- [x] **C5.1.2** Update all database queries to include jurisdiction filter
+  - Updated 5 API routes: search, reporting, section detail, filters (titles/chapters)
+  - Updated section detail page with 10+ queries
+  - All queries filter by `jurisdiction = 'dc'` (hardcoded, transparent to users)
+  - Updated all JOIN conditions to include jurisdiction matching
+- [ ] **C5.1.3** Add jurisdiction selector to navigation (currently DC only)
+  - Add dropdown in Navigation component
+  - Store selected jurisdiction in URL params or context
+  - Filter all queries by selected jurisdiction
+- [ ] **C5.1.4** Update `apps/web/lib/db.ts` connection utilities
+  - Ensure queries use jurisdiction parameter
+  - Add helper functions: `getCurrentJurisdiction()`, `getJurisdictions()`
+- [ ] **C5.1.5** Test "Browse by Chapter" navigation with new structure table (REQUIRES: B5.1.2)
+  - Query `structure` table for hierarchical navigation
+  - Render collapsible tree (Title → Chapter → Section)
+  - Verify breadcrumbs work correctly
+
+**Acceptance**: ✅ UI works with multi-jurisdiction schema, jurisdiction selector present (DC only initially), structure-based navigation
+
+---
+
+## 🧠 Milestone 5.2: Enhanced Intelligence
+
+**Goal**: Replace brittle regex parsing with validated structured outputs, optimize similarity search
+**Status**: ⚪ Not Started
+
+**Rationale**: Current LLM scripts use 200+ lines of fragile regex-based JSON parsing with manual field validation. Replace with Pydantic + Instructor for automatic validation, retry logic, and type safety. Optimize similarity search for full corpus scale.
+
+### Track A: LLM Hardening with Structured Outputs
+
+- [ ] **A5.2.1** Install `instructor` library (BLOCKS: A5.2.2)
+  ```bash
+  source .venv/bin/activate
+  pip install instructor
+  pip freeze > pipeline/requirements.txt
+  ```
+- [ ] **A5.2.2** Create `pipeline/llm_client.py` unified LLM wrapper (REQUIRES: A5.2.1, BLOCKS: A5.2.3)
+  - Wrap Gemini API with instructor
+  - Wrap Ollama API with instructor
+  - Integrate existing RateLimiter cascade logic (Gemini → Ollama fallback)
+  - Support `response_model` parameter for Pydantic validation
+  - Return validated model instances (not raw JSON strings)
+  - Handle rate limits and model fallback gracefully
+  - Logging for which model was used per request
+- [ ] **A5.2.3** Refactor `50_llm_reporting.py` to use structured outputs (REQUIRES: A5.1.1, A5.2.2)
+  - Import `ReportingRequirement` model from `pipeline/models.py`
+  - Replace `parse_llm_json()` function (40+ lines) with instructor calls
+  - Remove manual field validation loops (20+ lines)
+  - Use llm_client wrapper with `response_model=ReportingRequirement`
+  - Keep checkpoint/resume logic intact
+  - Maintain CONTRACTS.md output schema compatibility
+  - Test on subset data to verify parity with old approach
+- [ ] **A5.2.4** Refactor `55_similarity_classification.py` to use structured outputs (REQUIRES: A5.1.1, A5.2.2)
+  - Import `SimilarityClassification` model from `pipeline/models.py`
+  - Replace duplicate `parse_llm_json()` (40+ lines)
+  - Remove duplicate RateLimiter class (consolidate to llm_client.py)
+  - Remove manual field validation
+  - Maintain output schema compatibility
+  - Test on subset similarity pairs
+- [ ] **A5.2.5** Update CONTRACTS.md to reference Pydantic models (REQUIRES: A5.1.1)
+  - Add section: "## Schema Validation"
+  - Document that all schemas are enforced via `pipeline/models.py`
+  - Link field definitions to Pydantic model source code
+  - Note benefits: type safety, automatic validation, retry logic
+- [ ] **A5.2.6** Create `35_llm_obligations.py` - Enhanced obligation extraction (REQUIRES: A5.2.2)
+  - **Stage 1 (Fast Filter)**: Regex scan for sections containing numbers, "$", or temporal keywords
+  - **Stage 2 (LLM Classify)**: Send candidates to Gemini/Ollama for classification
+  - Use Pydantic model: `Obligation(type, phrase, value, unit, category)`
+  - Categories: "deadline" | "constraint" | "allocation" | "penalty"
+  - Output: `obligations_enhanced.ndjson` (replaces separate deadlines/amounts files)
+  - Support `--in`, `--out`, `--filter-threshold` flags
+  - Checkpoint/resume with .ckpt file
+- [ ] **A5.2.7** Run enhanced obligations extraction on subset
+  ```bash
+  python pipeline/35_llm_obligations.py \
+    --in data/outputs/sections_subset.ndjson \
+    --out data/outputs/obligations_enhanced_subset.ndjson
+  ```
+- [ ] **A5.2.8** Verify enhanced obligations output
+  ```bash
+  wc -l data/outputs/obligations_enhanced_subset.ndjson
+  jq -r '.category' data/outputs/obligations_enhanced_subset.ndjson | sort | uniq -c
+  ```
+
+**Acceptance**: ✅ Instructor + Pydantic integrated, 200+ lines of parsing code removed, enhanced obligations extracted
+
+---
+
+### Track A (Continued): Optimize Similarity Search
+
+- [ ] **A5.2.9** Update `40_similarities.py` to use FAISS IVF indexing (BLOCKS: B5.2.2)
+  - Replace `faiss.IndexFlatIP` with `faiss.IndexIVFFlat`
+  - Train index on 5,000 representative vectors (from subset or sample)
+  - Set `nprobe` parameter for speed/accuracy tradeoff
+  - Add `--use-ivf` and `--train-size` flags
+  - Document expected speedup (100x) vs accuracy loss (<1%)
+  - Test on subset to verify similar results to flat index
+- [ ] **A5.2.10** Benchmark IVF vs Flat indexing
+  ```bash
+  # Flat (baseline)
+  time python pipeline/40_similarities.py --in data/outputs/sections_subset.ndjson --out flat.ndjson
+
+  # IVF (optimized)
+  time python pipeline/40_similarities.py --in data/outputs/sections_subset.ndjson --out ivf.ndjson --use-ivf --train-size 5000
+  ```
+- [ ] **A5.2.11** Compare outputs to verify accuracy
+  ```bash
+  # Should have >99% overlap in detected pairs
+  python scripts/compare_similarity_outputs.py flat.ndjson ivf.ndjson
+  ```
+
+**Acceptance**: ✅ IVF indexing working, 100x speedup confirmed, >99% accuracy maintained
+
+---
+
+### Track D: Triage & Verify Strategy for Similarity Classification
+
+**Goal**: Implement "Model Cascading" (AI Triage) to optimize similarity classification - use Cross-Encoder (BERT) to filter "boring" cases and flag critical cases for LLM verification
+
+**Strategy**:
+1. **Triage (Fast)**: Cross-Encoder (BERT on Mac M2 MPS) checks every pair
+2. **Filter (Optimization)**: If BERT says "Neutral" (Related) with high confidence, skip LLM (~80% of cases)
+3. **Graduate (Verify)**: If BERT detects "Entailment" (Duplicate) or "Contradiction" (Conflict), send to LLM
+4. **Augment**: Pass BERT's suspicion to LLM prompt to reduce hallucination
+
+**Performance**: Expected to reduce LLM calls by ~80% while maintaining/improving accuracy through augmented prompts
+
+- [ ] **D5.2.1** Add `sentence-transformers` to requirements (BLOCKS: D5.2.2)
+  ```bash
+  source .venv/bin/activate
+  pip install sentence-transformers torch
+  pip freeze > pipeline/requirements.txt
+  ```
+- [ ] **D5.2.2** Update `pipeline/models.py` with triage metadata fields (REQUIRES: D5.2.1, A5.1.1)
+  - Add to `SimilarityClassification` model:
+    - `cross_encoder_label: Optional[str]` - Label from NLI model (entailment/contradiction/neutral)
+    - `cross_encoder_score: Optional[float]` - Confidence score from NLI model
+  - These fields allow auditing: "Where did Cross-Encoder say Conflict but LLM say Related?"
+- [ ] **D5.2.3** Create triage classifier in `55_similarity_classification.py` (REQUIRES: D5.2.2)
+  - Initialize `CrossEncoder('cross-encoder/nli-deberta-v3-xsmall')` at module level
+  - Use Mac M2 MPS acceleration: `device="mps"` if available, else `"cpu"`
+  - Create `get_triage_classification(text_a: str, text_b: str)` function
+  - Return: `{'label': str, 'score': float}`
+  - Labels: "contradiction" (Conflict), "entailment" (Duplicate), "neutral" (Related)
+- [ ] **D5.2.4** Modify main processing loop for triage workflow (REQUIRES: D5.2.3, BLOCKS: D5.2.5)
+  - **Step 1**: Run Cross-Encoder triage on every pair
+  - **Step 2 (Filter)**: If label="neutral" AND score > 0.5, write "related" classification and skip LLM
+  - **Step 3 (Graduate)**: If label="entailment" or "contradiction", send to LLM with triage context
+  - **Step 4 (Augment)**: Pass triage context to LLM prompt function
+  - Log: "Graduating {section_a} vs {section_b} to LLM. Flagged as: {label}"
+  - Record cross_encoder_label and cross_encoder_score in all outputs
+- [ ] **D5.2.5** Update LLM prompt to use triage context (REQUIRES: D5.2.4)
+  - Add `triage_context` parameter to prompt function
+  - Map NLI labels to legal terms:
+    - "entailment" → "NOTE: A logic analysis suggests these sections may be DUPLICATES or SUPERSEDED."
+    - "contradiction" → "NOTE: A logic analysis suggests these sections may be CONFLICTING."
+  - Prepend hint to prompt to ground the LLM
+- [ ] **D5.2.6** Create database migration for triage metadata (BLOCKS: D5.2.8)
+  ```sql
+  -- File: dbtools/schema_migrations/add_triage_metadata.sql
+  ALTER TABLE section_similarity_classifications
+  ADD COLUMN cross_encoder_label TEXT,
+  ADD COLUMN cross_encoder_score REAL;
+
+  CREATE INDEX idx_similarity_cross_encoder
+  ON section_similarity_classifications(cross_encoder_label);
+  ```
+- [ ] **D5.2.7** Test triage on subset data
+  ```bash
+  # Run with triage enabled
+  python pipeline/55_similarity_classification.py \
+    --similarities data/outputs/similarities_subset.ndjson \
+    --sections data/outputs/sections_subset.ndjson \
+    --out data/outputs/similarity_classifications_triage_subset.ndjson
+  ```
+  - Monitor logs for filter/graduate split
+  - Verify cross_encoder fields populated in output
+- [ ] **D5.2.8** Analyze triage effectiveness (REQUIRES: D5.2.7)
+  ```bash
+  # Count how many pairs were filtered vs graduated
+  jq -r '.cross_encoder_label' data/outputs/similarity_classifications_triage_subset.ndjson | sort | uniq -c
+
+  # Find disagreements between Cross-Encoder and LLM
+  jq 'select(.cross_encoder_label == "contradiction" and .classification != "conflicting")' \
+    data/outputs/similarity_classifications_triage_subset.ndjson
+  ```
+  - Calculate: % of pairs filtered (skipped LLM)
+  - Document: Cases where Cross-Encoder and LLM disagreed
+  - Expected: ~80% filtered, <5% disagreement rate
+
+**Acceptance**: ✅ Cross-Encoder triage working, ~80% of LLM calls eliminated, triage metadata stored for audit
+
+---
+
+### Track B: Load Enhanced Intelligence Data
+
+- [ ] **B5.2.1** Create `dbtools/load_obligations_enhanced.py` (REQUIRES: A5.2.7)
+  - Read `obligations_enhanced.ndjson`
+  - Insert to new `obligations` table (replaces deadlines + amounts)
+  - Schema: jurisdiction, section_id, type, phrase, value, unit, category
+  - ON CONFLICT UPDATE for idempotency
+  - Batch inserts with BaseLoader pattern
+  - .state file for resume
+- [ ] **B5.2.2** Run enhanced obligations loader
+  ```bash
+  python dbtools/load_obligations_enhanced.py \
+    --input data/outputs/obligations_enhanced_subset.ndjson
+  ```
+- [ ] **B5.2.3** Verify enhanced data loaded
+  ```bash
+  psql $DATABASE_URL -c "SELECT COUNT(*) FROM obligations WHERE jurisdiction = 'dc';"
+  psql $DATABASE_URL -c "SELECT category, COUNT(*) FROM obligations GROUP BY category;"
+  ```
+- [ ] **B5.2.4** Create migration to add `obligations` table
+  ```sql
+  CREATE TABLE obligations (
+    id BIGSERIAL,
+    jurisdiction VARCHAR(10) NOT NULL,
+    section_id TEXT NOT NULL,
+    type TEXT NOT NULL, -- 'deadline', 'constraint', 'allocation', 'penalty'
+    phrase TEXT NOT NULL,
+    value NUMERIC,
+    unit TEXT, -- 'days', 'dollars', 'percent', etc.
+    category TEXT,
+    PRIMARY KEY (jurisdiction, id),
+    FOREIGN KEY (jurisdiction, section_id) REFERENCES sections(jurisdiction, id)
+  );
+  ```
+
+**Acceptance**: ✅ Enhanced obligations loaded with LLM classifications, obligations table populated
+
+---
+
+### Track C: UI Updates for Enhanced Intelligence
+
+- [ ] **C5.2.1** Update section detail page to show enhanced obligations (REQUIRES: B5.2.3)
+  - Query `obligations` table instead of separate deadlines/amounts
+  - Group by category for display
+  - Show classification badges (Deadline, Constraint, Allocation, Penalty)
+  - Use existing colored panels from STYLE_GUIDE.md
+- [ ] **C5.2.2** Update search filters to include obligation categories
+  - Add "Has obligations" checkbox
+  - Add category filter dropdown (Deadline, Constraint, etc.)
+  - Update search API to support filtering
+- [ ] **C5.2.3** Test enhanced obligations display
+  - Verify all categories display correctly
+  - Check badge colors and icons
+  - Ensure filtering works in search
+
+**Acceptance**: ✅ Enhanced obligations visible in UI with categories, filters working
+
+---
+
+## 🎨 Milestone 5.3: "BCG-Level" UX Polish
+
+**Goal**: Professional legal intelligence platform UI with sophisticated navigation and visualization
+**Status**: ⚪ Not Started
+
+**Rationale**: Transform from "prototype search tool" to "professional legal intelligence platform" with in-text citations, graph visualizations, conflict dashboards, and refined typography.
+
+### Track C: UI/UX Enhancements
+
+- [ ] **C5.3.1** Install `shadcn/ui` component library (BLOCKS: C5.3.2-C5.3.8)
+  ```bash
+  cd apps/web
+  npx shadcn-ui@latest init
+  npx shadcn-ui@latest add button card dialog select dropdown-menu separator
+  ```
+  - Configure with existing Tailwind theme (slate/teal from STYLE_GUIDE.md)
+  - Test components render correctly
+- [ ] **C5.3.2** Implement in-text citation hyperlinking (REQUIRES: C5.3.1)
+  - Create `apps/web/lib/citation-linker.ts` utility
+  - Parse `text_html` on client-side to find citation patterns (§ X-XXX)
+  - Wrap citations in `<Link href="/section/{jurisdiction}:{id}">` tags
+  - Support cross-jurisdiction links (e.g., "see Cal. Code § 123")
+  - Handle edge cases: ranges (§ 1-101 to 1-105), multiple citations in sentence
+  - Add hover preview on citation links (show tooltip with section heading)
+- [ ] **C5.3.3** Add citation graph visualization (REQUIRES: C5.3.1, B5.1.5)
+  - Install `react-force-graph` library
+  ```bash
+  cd apps/web
+  pnpm add react-force-graph
+  ```
+  - Create `apps/web/components/CitationGraph.tsx` component
+  - Query inbound + outbound refs for current section
+  - Render force-directed graph with D3
+  - Color code nodes by relationship type (reference, similar, conflicting)
+  - Click node to navigate to that section
+  - Add zoom/pan controls
+- [ ] **C5.3.4** Create `/legislative` conflict dashboard route (REQUIRES: B5.1.5)
+  - Create `apps/web/app/legislative/page.tsx`
+  - Query all sections with `classification = 'conflicting'` or `'superseded'`
+  - Display in table format: Citation | Heading | Related To | Effective Date | Classification
+  - Sort by effective date (newest first)
+  - Filter by jurisdiction, title, classification type
+  - Click row to see side-by-side diff view
+  - Add export to CSV button
+  - Target audience: Legislative counsel, policy analysts
+- [ ] **C5.3.5** Add hover cards for citation previews (REQUIRES: C5.3.2)
+  - Install `@radix-ui/react-hover-card` (part of shadcn/ui)
+  - On hover over citation link, fetch section snippet via API
+  - Show popover with:
+    - Section heading
+    - First paragraph of text
+    - Link to "View full section"
+  - Add debounce to avoid excessive API calls
+  - Cache fetched snippets in memory
+- [ ] **C5.3.6** Implement fixed sidebar hierarchy navigation (REQUIRES: B5.1.2)
+  - Create `apps/web/components/HierarchyNav.tsx` component
+  - Query `structure` table for current jurisdiction
+  - Render collapsible tree:
+    - Title (expandable)
+      - Chapter (expandable)
+        - Section (links to detail page)
+  - Fixed position sidebar (left side, scrollable independently)
+  - Highlight current section in tree
+  - Collapse/expand all button
+  - Search within hierarchy
+- [ ] **C5.3.7** Add metadata right rail to section detail (REQUIRES: C5.3.1)
+  - Create `apps/web/components/MetadataRail.tsx`
+  - Fixed position right sidebar on section detail page
+  - Contains:
+    - Effective Date badge
+    - Reporting Requirements summary
+    - Deadlines/Obligations quick list
+    - Similar Sections (top 3)
+    - Conflict badges (if applicable)
+  - Sticky scroll behavior
+  - Responsive: collapses to accordion on mobile
+- [ ] **C5.3.8** Upgrade typography and visual hierarchy (REQUIRES: C5.3.1)
+  - Update `apps/web/tailwind.config.ts`:
+    - Add Inter font for UI text
+    - Add Merriweather or Playfair Display for legal text (serif)
+  - Update STYLE_GUIDE.md with font pairings
+  - Apply to pages:
+    - Home page: Hero with refined typography
+    - Search page: Cleaner filter layout
+    - Section detail: Serif body text, sans-serif UI
+  - Add visual enhancements:
+    - Conflict badges: ⚠️ icon + amber-600
+    - Related badges: 🔗 icon + sky-600
+    - Superseded badges: 🔄 icon + slate-600
+    - Duplicate badges: 📋 icon + indigo-600
+  - Refine spacing using consistent scale from STYLE_GUIDE.md
+- [ ] **C5.3.9** Update Navigation component for professional feel (REQUIRES: C5.3.1, C5.3.8)
+  - Create `apps/web/components/Navigation.tsx`
+  - Header with:
+    - Logo/brand (Deproceduralizer)
+    - Jurisdiction selector dropdown
+    - Main nav links: Search, Legislative Dashboard, Reporting, About
+    - User avatar placeholder (future auth)
+  - Breadcrumbs bar below header (fixed, scrolls with page)
+  - Mobile-responsive hamburger menu
+  - Use slate/teal color palette from STYLE_GUIDE.md
+- [ ] **C5.3.10** Test UX enhancements across devices (REQUIRES: C5.3.1-C5.3.9)
+  - Desktop (1920x1080): Verify three-column layout (hierarchy | content | metadata)
+  - Tablet (768x1024): Verify sidebars collapse appropriately
+  - Mobile (375x667): Verify navigation hamburger, accordions work
+  - Test citation links, hover cards, graph interactions
+  - Verify WCAG 2.2 AA contrast ratios (use accessibility checker)
+  - Test keyboard navigation (Tab, Enter, Escape)
+
+**Acceptance**: ✅ Professional UI with in-text citations, graph viz, conflict dashboard, hover cards, fixed sidebars, refined typography
 
 ---
 
@@ -498,6 +1062,8 @@ Track development progress across all three parallel tracks (A: Pipeline, B: Dat
 
 **Goal**: Use LLM to classify why similar sections are related (duplicate/superseded/related/conflicting), add comprehensive filters
 **Status**: ⚪ Not Started
+
+**Note**: This milestone should apply the instructor/Pydantic improvements from Milestone 5.2 when implementing the LLM classification pipeline.
 
 ### Track A: LLM Classification Pipeline
 
@@ -617,9 +1183,13 @@ Track development progress across all three parallel tracks (A: Pipeline, B: Dat
 ## 🔬 Milestone 6: Medium Corpus Processing
 
 **Goal**: Process expanded subset (Titles 1-10) to test pipeline at scale (~6 hour runtime)
-**Status**: ⚪ Not Started
+**Status**: ⏸️ PAUSED - Do Milestones 5.1, 5.2, 5.3 first
+
+**⚠️ STRATEGIC PAUSE**: Before processing medium/full corpus, we must complete architectural refinement (Milestones 5.1-5.3). Processing thousands of sections with brittle regex parsing and no multi-jurisdiction support would create technical debt at scale.
 
 **Rationale**: Current subset (Titles 1-2, ~100 sections, ~1 hour) → Medium subset (Titles 1-10, ~500-600 sections, ~5-6 hours) → Full corpus (~50 titles, days). Provides realistic scale testing before full corpus processing.
+
+**Prerequisites**: Milestones 5.1 (Architecture Hardening), 5.2 (Enhanced Intelligence), 5.3 (UX Polish) must be complete.
 
 ### Track A: Medium Corpus Pipeline Scripts
 
@@ -846,7 +1416,11 @@ Track development progress across all three parallel tracks (A: Pipeline, B: Dat
 ## 🌐 Milestone 8: Full DC Code Corpus
 
 **Goal**: Process entire DC Code, deploy to production
-**Status**: ⚪ Not Started
+**Status**: ⏸️ PAUSED - Do Milestones 5.1, 5.2, 5.3, then 6 first
+
+**⚠️ STRATEGIC PAUSE**: Full corpus processing requires architectural refinement (Milestones 5.1-5.3) and medium corpus validation (Milestone 6).
+
+**Prerequisites**: Milestones 5.1, 5.2, 5.3, and 6 must be complete. After this milestone, the system will be ready to add California, New York, and other jurisdictions.
 
 ### Track A: Full Corpus Processing
 
@@ -925,6 +1499,731 @@ Track development progress across all three parallel tracks (A: Pipeline, B: Dat
   - Test on mobile
 
 **Acceptance**: ✅ Full DC Code searchable in production
+
+---
+
+## 📚 Architecture Patterns & Code Examples
+
+This appendix provides reference implementations for key architectural patterns introduced in Milestones 5.1-5.3.
+
+### Multi-Jurisdiction Database Schema
+
+**Purpose**: Support DC, California, New York, and other legal codes in a single database without refactoring.
+
+**Pattern**: Composite primary keys with jurisdiction column
+
+```sql
+-- Jurisdictions metadata table
+CREATE TABLE jurisdictions (
+  id VARCHAR(10) PRIMARY KEY,           -- 'dc', 'ca', 'ny', etc.
+  name TEXT NOT NULL,                   -- 'District of Columbia Code'
+  abbreviation VARCHAR(10) NOT NULL,    -- 'DC'
+  type TEXT NOT NULL,                   -- 'district', 'state', 'county', 'city'
+  parser_version TEXT NOT NULL,         -- '0.2.0'
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Sections table with jurisdiction support
+CREATE TABLE sections (
+  jurisdiction VARCHAR(10) NOT NULL,
+  id TEXT NOT NULL,
+  citation TEXT NOT NULL,
+  heading TEXT NOT NULL,
+  text_plain TEXT NOT NULL,
+  text_html TEXT NOT NULL,
+  text_fts TSVECTOR GENERATED ALWAYS AS (
+    to_tsvector('english', coalesce(heading, '') || ' ' || coalesce(text_plain, ''))
+  ) STORED,
+  title_label TEXT,
+  chapter_label TEXT,
+  effective_date DATE,
+  has_reporting BOOLEAN DEFAULT FALSE,
+  reporting_summary TEXT,
+  reporting_tags TEXT[],
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (jurisdiction, id),
+  FOREIGN KEY (jurisdiction) REFERENCES jurisdictions(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_sections_jurisdiction ON sections(jurisdiction);
+CREATE INDEX idx_sections_text_fts ON sections USING GIN(text_fts);
+CREATE INDEX idx_sections_title ON sections(jurisdiction, title_label);
+
+-- Cross-references with jurisdiction support
+CREATE TABLE section_refs (
+  jurisdiction VARCHAR(10) NOT NULL,
+  from_id TEXT NOT NULL,
+  to_id TEXT NOT NULL,
+  raw_cite TEXT NOT NULL,
+  PRIMARY KEY (jurisdiction, from_id, to_id, raw_cite),
+  FOREIGN KEY (jurisdiction, from_id) REFERENCES sections(jurisdiction, id) ON DELETE CASCADE,
+  FOREIGN KEY (jurisdiction, to_id) REFERENCES sections(jurisdiction, id) ON DELETE CASCADE
+);
+
+-- Hierarchical structure table
+CREATE TABLE structure (
+  jurisdiction VARCHAR(10) NOT NULL,
+  id TEXT NOT NULL,
+  parent_id TEXT,
+  level TEXT NOT NULL,         -- 'title', 'subtitle', 'chapter', 'subchapter', 'section'
+  label TEXT NOT NULL,          -- 'Title 1', 'Chapter 3', etc.
+  heading TEXT,
+  ordinal INTEGER,              -- For sorting
+  PRIMARY KEY (jurisdiction, id),
+  FOREIGN KEY (jurisdiction, parent_id) REFERENCES structure(jurisdiction, id)
+);
+
+CREATE INDEX idx_structure_parent ON structure(jurisdiction, parent_id);
+CREATE INDEX idx_structure_level ON structure(jurisdiction, level);
+```
+
+**Benefits**:
+- Single schema supports multiple jurisdictions
+- No table duplication per jurisdiction
+- Cross-jurisdiction queries possible
+- Easy to add new jurisdictions (just insert into `jurisdictions` table)
+
+---
+
+### BaseLoader Pattern (DRY Principle)
+
+**Purpose**: Eliminate 200+ lines of duplicated code across loaders
+
+**Pattern**: Abstract base class with template method pattern
+
+```python
+# dbtools/common/base_loader.py
+import json
+import logging
+from abc import ABC, abstractmethod
+from pathlib import Path
+from typing import Any, Dict, List
+import psycopg2
+from psycopg2.extras import execute_batch
+from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
+
+class BaseLoader(ABC):
+    """Abstract base class for all data loaders.
+
+    Provides common functionality:
+    - Progress bars (tqdm)
+    - State file checkpoint/resume
+    - DB connection pooling
+    - Batch insertion
+    - Error handling and logging
+
+    Subclasses must implement:
+    - process_batch(): Define SQL INSERT logic
+    - validate_record(): Validate individual records
+    """
+
+    def __init__(
+        self,
+        db_url: str,
+        input_file: str,
+        batch_size: int = 500,
+        jurisdiction: str = "dc"
+    ):
+        self.db_url = db_url
+        self.input_file = Path(input_file)
+        self.batch_size = batch_size
+        self.jurisdiction = jurisdiction
+        self.state_file = self.input_file.with_suffix('.state')
+
+        # Statistics
+        self.stats = {
+            "processed": 0,
+            "inserted": 0,
+            "updated": 0,
+            "errors": 0,
+            "skipped": 0
+        }
+
+    def get_checkpoint(self) -> int:
+        """Load checkpoint from state file."""
+        if self.state_file.exists():
+            with open(self.state_file) as f:
+                state = json.load(f)
+                return state.get('offset', 0)
+        return 0
+
+    def save_checkpoint(self, offset: int):
+        """Save checkpoint to state file."""
+        with open(self.state_file, 'w') as f:
+            json.dump({
+                'offset': offset,
+                'stats': self.stats,
+                'jurisdiction': self.jurisdiction
+            }, f, indent=2)
+
+    @abstractmethod
+    def process_batch(self, cursor, batch: List[Dict[str, Any]]):
+        """Process a batch of records. Must be implemented by subclass.
+
+        Args:
+            cursor: psycopg2 cursor
+            batch: List of validated records
+
+        Should update self.stats with inserted/updated counts.
+        """
+        pass
+
+    @abstractmethod
+    def validate_record(self, record: Dict[str, Any]) -> bool:
+        """Validate a single record. Must be implemented by subclass.
+
+        Args:
+            record: Single NDJSON record
+
+        Returns:
+            True if valid, False otherwise
+        """
+        pass
+
+    def run(self):
+        """Main execution method."""
+        logger.info(f"Starting loader: {self.__class__.__name__}")
+        logger.info(f"Input: {self.input_file}")
+        logger.info(f"Jurisdiction: {self.jurisdiction}")
+
+        # Get starting offset from checkpoint
+        start_offset = self.get_checkpoint()
+        if start_offset > 0:
+            logger.info(f"Resuming from offset {start_offset}")
+
+        # Open DB connection
+        conn = psycopg2.connect(self.db_url)
+        conn.autocommit = False
+        cursor = conn.cursor()
+
+        try:
+            # Read NDJSON file
+            with open(self.input_file) as f:
+                lines = f.readlines()
+
+            # Progress bar
+            pbar = tqdm(total=len(lines), initial=start_offset, desc="Loading")
+
+            batch = []
+            for i, line in enumerate(lines[start_offset:], start=start_offset):
+                try:
+                    record = json.loads(line)
+
+                    # Validate
+                    if not self.validate_record(record):
+                        self.stats['skipped'] += 1
+                        continue
+
+                    # Add jurisdiction if not present
+                    if 'jurisdiction' not in record:
+                        record['jurisdiction'] = self.jurisdiction
+
+                    batch.append(record)
+
+                    # Process batch when full
+                    if len(batch) >= self.batch_size:
+                        self.process_batch(cursor, batch)
+                        conn.commit()
+                        batch = []
+                        self.save_checkpoint(i + 1)
+
+                    self.stats['processed'] += 1
+                    pbar.update(1)
+
+                except json.JSONDecodeError as e:
+                    logger.error(f"Invalid JSON at line {i}: {e}")
+                    self.stats['errors'] += 1
+                except Exception as e:
+                    logger.error(f"Error processing line {i}: {e}")
+                    self.stats['errors'] += 1
+                    conn.rollback()
+
+            # Process remaining batch
+            if batch:
+                self.process_batch(cursor, batch)
+                conn.commit()
+                self.save_checkpoint(len(lines))
+
+            pbar.close()
+
+            # Final stats
+            logger.info(f"Completed: {self.stats}")
+
+        except Exception as e:
+            logger.error(f"Fatal error: {e}")
+            conn.rollback()
+            raise
+        finally:
+            cursor.close()
+            conn.close()
+
+
+# Example subclass: dbtools/load_sections.py
+from dbtools.common.base_loader import BaseLoader
+
+class SectionsLoader(BaseLoader):
+    def validate_record(self, record):
+        required = ['id', 'citation', 'heading', 'text_plain', 'text_html']
+        for field in required:
+            if field not in record:
+                logger.error(f"Missing field: {field}")
+                return False
+        return True
+
+    def process_batch(self, cursor, batch):
+        sql = """
+        INSERT INTO sections (
+            jurisdiction, id, citation, heading, text_plain, text_html,
+            title_label, chapter_label
+        ) VALUES (
+            %(jurisdiction)s, %(id)s, %(citation)s, %(heading)s,
+            %(text_plain)s, %(text_html)s, %(title_label)s, %(chapter_label)s
+        )
+        ON CONFLICT (jurisdiction, id) DO UPDATE SET
+            citation = EXCLUDED.citation,
+            heading = EXCLUDED.heading,
+            text_plain = EXCLUDED.text_plain,
+            text_html = EXCLUDED.text_html,
+            title_label = EXCLUDED.title_label,
+            chapter_label = EXCLUDED.chapter_label,
+            updated_at = NOW()
+        """
+
+        execute_batch(cursor, sql, batch, page_size=self.batch_size)
+        self.stats['inserted'] += len(batch)
+
+# Usage
+if __name__ == "__main__":
+    import sys
+    loader = SectionsLoader(
+        db_url=os.getenv("DATABASE_URL"),
+        input_file=sys.argv[1],
+        jurisdiction="dc"
+    )
+    loader.run()
+```
+
+**Benefits**:
+- No code duplication across loaders
+- Consistent progress bars, logging, error handling
+- Easy to add new loaders (just implement 2 methods)
+- Checkpoint/resume logic in one place
+
+---
+
+### Structured LLM with Pydantic + Instructor
+
+**Purpose**: Replace 200+ lines of brittle regex JSON parsing with automatic validation
+
+**Pattern**: Pydantic models + instructor library
+
+```python
+# pipeline/models.py
+from pydantic import BaseModel, Field, field_validator
+from typing import List, Optional, Literal
+
+class ReportingRequirement(BaseModel):
+    """LLM-extracted reporting requirement from legal section."""
+
+    has_reporting: bool = Field(
+        ...,
+        description="True if section mandates any reporting, filing, or notice requirement"
+    )
+
+    reporting_summary: str = Field(
+        default="",
+        description="Concise 1-2 sentence summary of what must be reported and to whom",
+        max_length=500
+    )
+
+    frequency: Optional[Literal["annual", "quarterly", "monthly", "ad-hoc", "event-triggered"]] = Field(
+        None,
+        description="How often the report is required"
+    )
+
+    entities: List[str] = Field(
+        default_factory=list,
+        description="List of entities responsible for reporting (e.g., 'Mayor', 'Board of Education')"
+    )
+
+    tags: List[str] = Field(
+        default_factory=list,
+        description="High-level categorization tags (lowercase, kebab-case)",
+        max_length=10
+    )
+
+    highlight_phrases: List[str] = Field(
+        default_factory=list,
+        description="Exact phrases from the text that indicate reporting requirements"
+    )
+
+    @field_validator('tags')
+    @classmethod
+    def lowercase_tags(cls, v):
+        """Ensure tags are lowercase."""
+        return [tag.lower().replace(' ', '-') for tag in v]
+
+
+class Obligation(BaseModel):
+    """LLM-extracted obligation (deadline, constraint, allocation, penalty)."""
+
+    category: Literal["deadline", "constraint", "allocation", "penalty"] = Field(
+        ...,
+        description="Type of obligation"
+    )
+
+    phrase: str = Field(
+        ...,
+        description="Exact text phrase from the section",
+        min_length=5,
+        max_length=500
+    )
+
+    value: Optional[float] = Field(
+        None,
+        description="Numeric value (days for deadlines, dollars for amounts)"
+    )
+
+    unit: Optional[str] = Field(
+        None,
+        description="Unit of measurement (days, dollars, percent, etc.)"
+    )
+
+
+class SimilarityClassification(BaseModel):
+    """LLM classification of why two sections are similar."""
+
+    classification: Literal["duplicate", "superseded", "related", "conflicting"] = Field(
+        ...,
+        description="Type of relationship between the sections"
+    )
+
+    explanation: str = Field(
+        ...,
+        description="Brief explanation of why they are classified this way",
+        min_length=20,
+        max_length=500
+    )
+
+    confidence: Literal["high", "medium", "low"] = Field(
+        default="medium",
+        description="LLM's confidence in this classification"
+    )
+
+
+# pipeline/llm_client.py
+import os
+import logging
+from typing import Type, TypeVar
+import instructor
+from pydantic import BaseModel
+from google import genai
+import requests
+
+logger = logging.getLogger(__name__)
+
+T = TypeVar('T', bound=BaseModel)
+
+class LLMClient:
+    """Unified LLM client with Gemini + Ollama fallback."""
+
+    def __init__(self):
+        self.gemini_key = os.getenv("GEMINI_API_KEY")
+        self.ollama_url = "http://localhost:11434"
+
+        # Initialize Gemini client with instructor
+        if self.gemini_key:
+            client = genai.Client(api_key=self.gemini_key)
+            self.gemini_client = instructor.from_gemini(client)
+        else:
+            self.gemini_client = None
+            logger.warning("No GEMINI_API_KEY found, will use Ollama only")
+
+    def generate(
+        self,
+        prompt: str,
+        response_model: Type[T],
+        model: str = "gemini-2.5-flash",
+        max_retries: int = 3
+    ) -> T:
+        """Generate structured output from LLM.
+
+        Args:
+            prompt: User prompt
+            response_model: Pydantic model for validation
+            model: Model name (Gemini or Ollama)
+            max_retries: Number of retries on validation failure
+
+        Returns:
+            Validated Pydantic model instance
+
+        Raises:
+            ValueError: If all attempts fail
+        """
+        # Try Gemini first
+        if self.gemini_client and model.startswith("gemini"):
+            try:
+                result = self.gemini_client.chat.completions.create(
+                    model=model,
+                    response_model=response_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_retries=max_retries
+                )
+                logger.info(f"Generated with {model}")
+                return result
+            except Exception as e:
+                logger.warning(f"Gemini failed: {e}, falling back to Ollama")
+
+        # Fallback to Ollama
+        return self._generate_ollama(prompt, response_model, max_retries)
+
+    def _generate_ollama(
+        self,
+        prompt: str,
+        response_model: Type[T],
+        max_retries: int
+    ) -> T:
+        """Generate with Ollama + manual validation."""
+        import json
+
+        # Add schema to prompt
+        schema = response_model.model_json_schema()
+        enhanced_prompt = f"""
+{prompt}
+
+IMPORTANT: Return ONLY valid JSON matching this schema:
+{json.dumps(schema, indent=2)}
+"""
+
+        for attempt in range(max_retries):
+            try:
+                resp = requests.post(
+                    f"{self.ollama_url}/api/generate",
+                    json={
+                        "model": "phi4-mini",
+                        "prompt": enhanced_prompt,
+                        "stream": False,
+                        "format": "json"
+                    },
+                    timeout=60
+                )
+                resp.raise_for_status()
+
+                # Parse and validate
+                raw_json = resp.json()["response"]
+                data = json.loads(raw_json)
+                result = response_model.model_validate(data)
+
+                logger.info("Generated with Ollama phi4-mini")
+                return result
+
+            except Exception as e:
+                logger.warning(f"Ollama attempt {attempt + 1} failed: {e}")
+                if attempt == max_retries - 1:
+                    raise ValueError(f"All {max_retries} attempts failed")
+
+        raise ValueError("Unreachable")
+
+
+# Usage in pipeline scripts
+from pipeline.models import ReportingRequirement
+from pipeline.llm_client import LLMClient
+
+client = LLMClient()
+
+def analyze_section(section_text: str) -> ReportingRequirement:
+    prompt = f"""
+Analyze this legal code section for reporting requirements.
+
+SECTION TEXT:
+{section_text}
+
+Identify:
+1. Does it require any reports, filings, or notices?
+2. Who must report and to whom?
+3. How often?
+4. Extract exact phrases that indicate these requirements.
+"""
+
+    # Returns validated ReportingRequirement instance (not raw JSON!)
+    return client.generate(
+        prompt=prompt,
+        response_model=ReportingRequirement,
+        model="gemini-2.5-flash"
+    )
+
+# No more parse_llm_json() needed!
+# No more manual field validation!
+# Automatic retries on malformed responses!
+```
+
+**Benefits**:
+- Eliminate 40+ lines of regex JSON parsing per script
+- Automatic validation with helpful error messages
+- Type safety with IDE autocomplete
+- Built-in retry logic
+- Single source of truth for schemas (Pydantic models)
+
+---
+
+### Jurisdiction-Aware Parser (Abstract Base + DC Subclass)
+
+**Purpose**: Support different XML formats for DC, California, etc. without code duplication
+
+**Pattern**: Abstract base parser with jurisdiction-specific subclasses
+
+```python
+# pipeline/parsers/base.py
+from abc import ABC, abstractmethod
+from typing import Dict, Any, List
+from pathlib import Path
+
+class BaseParser(ABC):
+    """Abstract base parser for legal code XML."""
+
+    def __init__(self, jurisdiction: str):
+        self.jurisdiction = jurisdiction
+
+    @abstractmethod
+    def parse_structure(self, index_file: Path) -> List[Dict[str, Any]]:
+        """Parse index.xml to extract hierarchical structure.
+
+        Returns list of structure records:
+        {
+            "jurisdiction": "dc",
+            "id": "dc-title-1",
+            "parent_id": None,
+            "level": "title",
+            "label": "Title 1",
+            "heading": "Government Organization",
+            "ordinal": 1
+        }
+        """
+        pass
+
+    @abstractmethod
+    def parse_section(self, section_file: Path) -> Dict[str, Any]:
+        """Parse individual section XML.
+
+        Returns section record:
+        {
+            "jurisdiction": "dc",
+            "id": "dc-1-101",
+            "citation": "§ 1-101",
+            "heading": "Title and short title",
+            "text_plain": "...",
+            "text_html": "...",
+            "effective_date": "2024-01-01"
+        }
+        """
+        pass
+
+
+# pipeline/parsers/dc.py
+import xml.etree.ElementTree as ET
+from pipeline.parsers.base import BaseParser
+
+class DCParser(BaseParser):
+    """Parser for DC Code XML format."""
+
+    def parse_structure(self, index_file):
+        tree = ET.parse(index_file)
+        root = tree.getroot()
+
+        # DC-specific XML structure
+        # <collection>
+        #   <container id="dc-title-1" type="title">
+        #     <heading>Government Organization</heading>
+        #     <num>1</num>
+        #   </container>
+        # </collection>
+
+        structures = []
+        for container in root.findall(".//container"):
+            structures.append({
+                "jurisdiction": self.jurisdiction,
+                "id": container.get("id"),
+                "parent_id": container.get("parent_id"),
+                "level": container.get("type"),
+                "label": f"Title {container.find('num').text}",
+                "heading": container.find("heading").text,
+                "ordinal": int(container.find("num").text)
+            })
+
+        return structures
+
+    def parse_section(self, section_file):
+        tree = ET.parse(section_file)
+        root = tree.getroot()
+
+        # DC-specific section structure
+        section_id = root.get("id")
+        citation = root.find(".//num").text
+        heading = root.find(".//heading").text
+
+        # Extract text
+        text_elem = root.find(".//text")
+        text_html = ET.tostring(text_elem, encoding='unicode', method='html')
+        text_plain = ''.join(text_elem.itertext())
+
+        # Extract effective date from history
+        history = root.find(".//history")
+        effective_date = None
+        if history is not None:
+            date_elem = history.find(".//date[@type='effective']")
+            if date_elem is not None:
+                effective_date = date_elem.text
+
+        return {
+            "jurisdiction": self.jurisdiction,
+            "id": section_id,
+            "citation": f"§ {citation}",
+            "heading": heading,
+            "text_plain": text_plain,
+            "text_html": text_html,
+            "effective_date": effective_date
+        }
+
+
+# Future: pipeline/parsers/california.py
+class CaliforniaParser(BaseParser):
+    """Parser for California Code XML format (different structure)."""
+
+    def parse_structure(self, index_file):
+        # California uses different XML tags
+        pass
+
+    def parse_section(self, section_file):
+        # California sections have different structure
+        pass
+
+
+# Usage in pipeline scripts
+def get_parser(jurisdiction: str) -> BaseParser:
+    """Factory function to get appropriate parser."""
+    if jurisdiction == "dc":
+        return DCParser(jurisdiction)
+    elif jurisdiction == "ca":
+        return CaliforniaParser(jurisdiction)
+    else:
+        raise ValueError(f"Unknown jurisdiction: {jurisdiction}")
+
+# In 10_parse_xml.py
+parser = get_parser(args.jurisdiction)
+sections = []
+for section_file in section_files:
+    section = parser.parse_section(section_file)
+    sections.append(section)
+```
+
+**Benefits**:
+- No code duplication when adding new jurisdictions
+- Jurisdiction-specific logic is isolated
+- Easy to test individual parsers
+- Clear extension point for new legal codes
 
 ---
 
