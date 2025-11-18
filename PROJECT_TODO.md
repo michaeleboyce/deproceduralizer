@@ -395,11 +395,11 @@ Track development progress across all three parallel tracks (A: Pipeline, B: Dat
 ## 🧾 Milestone 5: Reporting Detection (LLM)
 
 **Goal**: Use phi3.5 to detect reporting requirements and highlight them
-**Status**: ⚪ Not Started
+**Status**: ✅ Complete
 
 ### Track A: LLM Reporting Detection
 
-- [ ] **A5.1** Implement `pipeline/50_llm_reporting.py` (REQUIRES: A0.5, A1.2, BLOCKS: B5.1)
+- [x] **A5.1** Implement `pipeline/50_llm_reporting.py` (REQUIRES: A0.5, A1.2, BLOCKS: B5.1)
   - Read `sections_subset.ndjson`
   - For each section, call Ollama generate API with phi3.5:
     ```python
@@ -421,27 +421,25 @@ Track development progress across all three parallel tracks (A: Pipeline, B: Dat
   - Write `reporting_subset.ndjson` (id, has_reporting, reporting_summary, tags, highlight_phrases)
   - tqdm + .ckpt for resume
   - Support `--in`, `--out` flags
-- [ ] **A5.2** Run reporting detection
-  ```bash
-  python pipeline/50_llm_reporting.py \
-    --in data/outputs/sections_subset.ndjson \
-    --out data/outputs/reporting_subset.ndjson
-  ```
+- [x] **A5.2** Run reporting detection
+  - Reporting pipeline executed successfully
+  - Generated reporting data for 98 sections
+  - 45 sections identified with reporting requirements
 
-**Acceptance**: ✅ `reporting_subset.ndjson` exists
+**Acceptance**: ✅ **COMPLETE** - Reporting data generated and processed
 
 ---
 
 ### Track B: Load Reporting Data
 
-- [ ] **B5.1** Implement `dbtools/load_reporting.py` (REQUIRES: A5.2)
+- [x] **B5.1** Implement `dbtools/load_reporting.py` (REQUIRES: A5.2)
   - Read `reporting_subset.ndjson`
   - UPDATE `dc_sections` SET has_reporting, reporting_summary, reporting_tags
   - INSERT tags into `dc_global_tags` (ON CONFLICT DO NOTHING)
   - INSERT section-tag pairs into `dc_section_tags`
   - Store `highlight_phrases` in new table `dc_section_highlights(section_id, phrase)` if needed
   - .state for resume
-- [ ] **B5.2** Add highlights table if needed
+- [x] **B5.2** Add highlights table if needed
   ```sql
   CREATE TABLE IF NOT EXISTS dc_section_highlights (
     id bigserial PRIMARY KEY,
@@ -449,56 +447,422 @@ Track development progress across all three parallel tracks (A: Pipeline, B: Dat
     phrase text NOT NULL
   );
   ```
-- [ ] **B5.3** Run loader
+- [x] **B5.3** Run loader
   ```bash
   python dbtools/load_reporting.py --input data/outputs/reporting_subset.ndjson
   ```
 
-**Acceptance**: ✅ Reporting metadata in database
+**Acceptance**: ✅ **COMPLETE** - 98 sections processed, 45 with reporting requirements, 74 unique tags, 120 section-tag pairs, 84 highlight phrases
 
 ---
 
 ### Track C: Reporting UI
 
-- [ ] **C5.1** Update `/api/search` to support `hasReporting` filter (REQUIRES: B5.3)
-  - Add `WHERE has_reporting = true` when filter enabled
-- [ ] **C5.2** Update `/search` page
-  - Add "Has reporting requirement" checkbox
-  - Test filtering
-- [ ] **C5.3** Update `/section/[id]` page (REQUIRES: B5.3)
-  - If `has_reporting = true`, show badge and `reporting_summary`
-  - Create `apps/web/lib/highlight.ts` utility to highlight phrases
-  - Highlight `highlight_phrases` in section text using `<mark>` tags
-- [ ] **C5.4** Test reporting highlights
-  ```bash
-  # Visit a section with reporting requirements
-  # Verify summary badge and highlighted phrases
-  ```
+- [x] **C5.1** Update `/api/search` to support `hasReporting` filter (REQUIRES: B5.3)
+  - Added `hasReporting` query parameter to search API
+  - Implemented `WHERE has_reporting = true` filter
+  - Returns filter status in response
+- [x] **C5.2** Update `/search` page
+  - Added "Has reporting requirement" checkbox to filters
+  - Integrated with URL parameters and search state
+  - Added purple badge to active filters display
+  - Checkbox resets with "Clear" button
+- [x] **C5.3** Update `/section/[id]` page (REQUIRES: B5.3)
+  - Created `apps/web/lib/highlight.ts` utility for phrase highlighting
+  - Added queries for `dc_section_highlights` and `dc_section_tags`
+  - Display reporting badge when `has_reporting = true`
+  - Show `reporting_summary` with purple theme
+  - Display tags as small badges
+  - Highlighted phrases in section text using yellow `<mark>` tags
+- [x] **C5.4** Test reporting highlights
+  - Verified 45 sections with reporting requirements in database
+  - Confirmed highlight phrases (84 total) and tags (74 unique) loaded
+  - Tested reporting badge, summary, and tag display
+  - Verified phrase highlighting functionality
+- [ ] **C5.5** Improve overall look/feel/navigation with modern design system
+  - Create comprehensive STYLE_GUIDE.md with color palette and design tokens
+  - Implement sophisticated slate/teal color palette (replacing basic blues)
+  - Add navigation header component with breadcrumbs across all pages
+  - Enhance typography hierarchy and spacing consistency
+  - Refine component styling (buttons, badges, cards, forms)
+  - Update home page with refined hero and CTAs
+  - Update search page with cleaner filters and results layout
+  - Update section detail page with improved hierarchy
+  - Refine diff viewer colors for better readability
 
-**Acceptance**: ✅ Can filter for reporting, see highlights on section page
+**Acceptance**: ✅ **COMPLETE** - Full reporting UI with filters, badges, summaries, tags, and highlighted phrases
 
 ---
 
-## 🌐 Milestone 6: Full DC Code Corpus
+## 🔍 Milestone 5.5: Similarity Classification Analysis
+
+**Goal**: Use LLM to classify why similar sections are related (duplicate/superseded/related/conflicting), add comprehensive filters
+**Status**: ⚪ Not Started
+
+### Track A: LLM Classification Pipeline
+
+- [ ] **A5.5.1** Install Google Gemini API client (BLOCKS: A5.5.2)
+  ```bash
+  source .venv/bin/activate
+  pip install google-genai
+  pip freeze > pipeline/requirements.txt
+  ```
+- [ ] **A5.5.2** Implement `pipeline/55_similarity_classification.py` (REQUIRES: A5.5.1, A4.2, BLOCKS: B5.5.2)
+  - Read `similarities_subset.ndjson` (254 pairs with similarity scores)
+  - For each pair, fetch text_plain for both sections from `sections_subset.ndjson`
+  - Call Gemini 2.0 Flash API to classify relationship type
+  - Fallback to Ollama phi3.5 when rate limited (track which model used)
+  - Classifications: duplicate | superseded | related | conflicting
+  - Rate limiting: 15 RPM, 1M TPM, 1500 RPD (Gemini free tier)
+  - Store: section_a, section_b, similarity, classification, explanation, model_used, analyzed_at
+  - Write to `data/outputs/similarity_classifications_subset.ndjson`
+  - Checkpoint every 10 pairs (.ckpt file for resume)
+  - Support `--similarities`, `--sections`, `--out` flags
+- [ ] **A5.5.3** Run classification pipeline (REQUIRES: A5.5.2)
+  ```bash
+  python pipeline/55_similarity_classification.py \
+    --similarities data/outputs/similarities_subset.ndjson \
+    --sections data/outputs/sections_subset.ndjson \
+    --out data/outputs/similarity_classifications_subset.ndjson
+  ```
+- [ ] **A5.5.4** Verify output (REQUIRES: A5.5.3)
+  ```bash
+  wc -l data/outputs/similarity_classifications_subset.ndjson  # Should be 254
+  jq -r '.classification' data/outputs/similarity_classifications_subset.ndjson | sort | uniq -c
+  jq -r '.model_used' data/outputs/similarity_classifications_subset.ndjson | sort | uniq -c
+  ```
+
+**Note**: Gemini API key should be set in `.env` file as `GEMINI_API_KEY`
+**Acceptance**: ✅ 254 similarity pairs classified, both Gemini and phi3.5 usage tracked
+
+---
+
+### Track B: Store Classifications
+
+- [ ] **B5.5.1** Create schema migration for classifications table (REQUIRES: B4.2, BLOCKS: B5.5.2)
+  - Create `dbtools/schema_migrations/add_similarity_classifications.sql`
+  - Table: `dc_section_similarity_classifications`
+  - Columns: section_a, section_b, classification, explanation, model_used, analyzed_at
+  - Primary key: (section_a, section_b)
+  - Foreign key to `dc_section_similarities` with CASCADE
+  - Index on classification column
+  - Run migration against Neon DB
+- [ ] **B5.5.2** Implement `dbtools/load_similarity_classifications.py` (REQUIRES: A5.5.3, B5.5.1)
+  - Read `similarity_classifications_subset.ndjson`
+  - Batch insert with ON CONFLICT UPDATE
+  - .state file for resume
+  - Support `--input` flag
+- [ ] **B5.5.3** Run loader (REQUIRES: B5.5.2)
+  ```bash
+  python dbtools/load_similarity_classifications.py \
+    --input data/outputs/similarity_classifications_subset.ndjson
+  ```
+- [ ] **B5.5.4** Verify data loaded (REQUIRES: B5.5.3)
+  ```bash
+  psql $DATABASE_URL -c "SELECT COUNT(*) FROM dc_section_similarity_classifications;"
+  psql $DATABASE_URL -c "SELECT classification, COUNT(*) FROM dc_section_similarity_classifications GROUP BY classification;"
+  psql $DATABASE_URL -c "SELECT model_used, COUNT(*) FROM dc_section_similarity_classifications GROUP BY model_used;"
+  ```
+
+**Acceptance**: ✅ 254 classifications loaded, distribution by type and model verified
+
+---
+
+### Track C: Advanced Similarity Filters & UI
+
+- [ ] **C5.5.1** Update `apps/web/db/schema.ts` (REQUIRES: B5.5.1)
+  - Add `dcSectionSimilarityClassifications` table definition
+  - Add proper relations to similarities and sections tables
+- [ ] **C5.5.2** Update `/api/search` route (REQUIRES: C5.5.1, B5.5.4)
+  - Add `hasSimilar` boolean filter (sections with any similarities)
+  - Add `minSimilarity` and `maxSimilarity` number filters (0.7-1.0)
+  - Add `similarityClassification` filter (duplicate|superseded|related|conflicting)
+  - Join with `dc_section_similarities` and `dc_section_similarity_classifications` when filters active
+- [ ] **C5.5.3** Update `/search` page UI (REQUIRES: C5.5.2)
+  - Add "Similar Sections" filter panel
+  - Add "Has similar sections" checkbox
+  - Add similarity percentage range slider (70-100%)
+  - Add classification type dropdown (All, Duplicate, Superseded, Related, Conflicting)
+  - Add collapsible legend explaining each classification:
+    - **Duplicate**: Nearly identical provisions, consolidation opportunity
+    - **Superseded**: One section replaces/updates the other
+    - **Related**: Similar topics, different purposes
+    - **Conflicting**: Similar language, contradictory requirements
+  - Use distinct colors for each classification type
+- [ ] **C5.5.4** Update `/section/[id]` page (REQUIRES: C5.5.2)
+  - Query `dc_section_similarity_classifications` for each similar section
+  - Display classification badge (colored by type) next to similar sections
+  - Show explanation text on hover/expand
+  - Show model used in small gray text
+  - Keep existing diff modal functionality
+- [ ] **C5.5.5** Test all functionality (REQUIRES: C5.5.3, C5.5.4)
+  - Test filters individually and in combination
+  - Test with known duplicates (similarity ~1.0)
+  - Verify legend clarity and accuracy
+  - Check mobile responsiveness
+- [x] **C5.5.6** Create reporting requirements summary page (REQUIRES: C5.3, C5.4)
+  - Add `/reporting` route (`apps/web/app/reporting/page.tsx`)
+  - Query all sections where `has_reporting = true`
+  - Display in table/card format showing: citation, heading, summary, tags
+  - Add filters: by tag, by title/chapter, search within summaries
+  - Add sorting options: by citation, by title, alphabetically
+  - Link each section to its detail page (`/section/[id]`)
+  - Show count of total reporting requirements at top
+  - Group by tag categories (collapsible sections)
+
+**Acceptance**: ✅ Advanced filters working, legend helpful, classifications displayed with badges and explanations
+
+---
+
+## 🔬 Milestone 6: Medium Corpus Processing
+
+**Goal**: Process expanded subset (Titles 1-10) to test pipeline at scale (~6 hour runtime)
+**Status**: ⚪ Not Started
+
+**Rationale**: Current subset (Titles 1-2, ~100 sections, ~1 hour) → Medium subset (Titles 1-10, ~500-600 sections, ~5-6 hours) → Full corpus (~50 titles, days). Provides realistic scale testing before full corpus processing.
+
+### Track A: Medium Corpus Pipeline Scripts
+
+- [ ] **A6.1** Create `scripts/make_subset_medium.sh` (BLOCKS: A6.2)
+  - Copy **all sections** from Titles 1-10 (not just first 50 like small subset)
+  - Target directory: `data/subsets_medium/`
+  - Include all title index files (1-10) for hierarchy information
+  - Estimated ~500-600 sections total
+  ```bash
+  #!/bin/bash
+  # Similar to make_subset.sh but for Titles 1-10 (full sections, not limited to 50)
+  SOURCE_DIR="data/raw/dc-law-xml/us/dc/council/code/titles"
+  DEST_DIR="data/subsets_medium"
+  # Copy all sections from Titles 1-10
+  for i in {1..10}; do
+    cp "$SOURCE_DIR/$i/sections/"*.xml "$DEST_DIR/"
+    cp "$SOURCE_DIR/$i/index.xml" "$DEST_DIR/title-$i-index.xml"
+  done
+  ```
+- [ ] **A6.2** Create `scripts/run_all_medium.sh` (REQUIRES: A6.1, BLOCKS: B6.1)
+  - Mirror structure of `run_all_subset.sh` but with ALL 6 pipeline steps
+  - Run on `data/subsets_medium/` → output to `data/outputs/*_medium.ndjson`
+  - Pipeline steps:
+    1. Parse XML: `10_parse_xml.py --src data/subsets_medium --out sections_medium.ndjson`
+    2. Extract cross-refs: `20_crossrefs.py --in sections_medium.ndjson --out refs_medium.ndjson`
+    3. Extract obligations: `30_regex_obligations.py --in sections_medium.ndjson --deadlines deadlines_medium.ndjson --amounts amounts_medium.ndjson`
+    4. Compute similarities: `40_similarities.py --in sections_medium.ndjson --out similarities_medium.ndjson --top-k 10 --min-similarity 0.7` ⏱️ **SLOW**
+    5. **Classify similarities**: `55_similarity_classification.py --similarities similarities_medium.ndjson --sections sections_medium.ndjson --out similarity_classifications_medium.ndjson` ⏱️ **VERY SLOW (LLM)**
+    6. Detect reporting: `50_llm_reporting.py --in sections_medium.ndjson --out reporting_medium.ndjson` ⏱️ **SLOW (LLM)**
+- [ ] **A6.3** Run medium corpus pipeline (REQUIRES: A6.2)
+  ```bash
+  ./scripts/make_subset_medium.sh
+  ./scripts/run_all_medium.sh  # Target: ~5-6 hours runtime
+  ```
+- [ ] **A6.4** Verify all medium outputs exist (REQUIRES: A6.3)
+  ```bash
+  ls -lh data/outputs/*_medium.ndjson
+  # Should have: sections, refs, deadlines, amounts, similarities, similarity_classifications, reporting
+  wc -l data/outputs/sections_medium.ndjson  # Expected: ~500-600 lines
+  ```
+
+**Acceptance**: ✅ All medium corpus NDJSON files generated (~500-600 sections from Titles 1-10)
+
+---
+
+### Track B: Load Medium Corpus to Database
+
+- [ ] **B6.1** Create `scripts/load_db_medium.sh` (REQUIRES: A6.4, BLOCKS: B6.2)
+  - Run all loaders pointing to medium outputs
+  - Loaders will append to existing database tables (alongside small subset data)
+  ```bash
+  #!/bin/bash
+  source .venv/bin/activate
+  python dbtools/load_sections.py --input data/outputs/sections_medium.ndjson
+  python dbtools/load_refs.py --input data/outputs/refs_medium.ndjson
+  python dbtools/load_deadlines_amounts.py \
+    --deadlines data/outputs/deadlines_medium.ndjson \
+    --amounts data/outputs/amounts_medium.ndjson
+  python dbtools/load_similarities.py --input data/outputs/similarities_medium.ndjson
+  python dbtools/load_similarity_classifications.py --input data/outputs/similarity_classifications_medium.ndjson
+  python dbtools/load_reporting.py --input data/outputs/reporting_medium.ndjson
+  ```
+- [ ] **B6.2** Run medium corpus loaders (REQUIRES: B6.1)
+  ```bash
+  ./scripts/load_db_medium.sh
+  ```
+- [ ] **B6.3** Verify medium data loaded (REQUIRES: B6.2)
+  ```bash
+  psql $DATABASE_URL -c "SELECT COUNT(*) FROM dc_sections;"  # Should be ~600-700 (100 small + 500-600 medium)
+  psql $DATABASE_URL -c "SELECT COUNT(*) FROM dc_section_similarity_classifications;"
+  psql $DATABASE_URL -c "SELECT DISTINCT title_label FROM dc_sections ORDER BY title_label;"  # Should show Titles 1-10
+  ```
+
+**Acceptance**: ✅ Medium corpus loaded to database, all tables populated, titles 1-10 visible
+
+---
+
+### Track C: Performance Testing & Validation
+
+- [ ] **C6.1** Test UI performance with larger dataset (REQUIRES: B6.3)
+  - Search page: measure load times, test with various queries
+  - Section detail page: check rendering speed with more similar sections
+  - Similar sections: verify classification badges display correctly
+  - Reporting page: test filters and grouping with more data
+- [ ] **C6.2** Verify all features work correctly (REQUIRES: B6.3)
+  - Full-text search finds results across Titles 1-10
+  - Cross-references resolve correctly (more refs should exist now)
+  - Similar sections appear with classification types (duplicate/superseded/related/conflicting)
+  - Reporting requirements filter and display properly
+  - Title/chapter filters show expanded options (10 titles worth)
+- [ ] **C6.3** Document performance findings (REQUIRES: C6.1, C6.2)
+  - Record actual pipeline runtime (compare to 1 hour estimate for small subset)
+  - Note any bottlenecks in UI (slow queries, large result sets)
+  - Identify optimizations needed before full corpus (~50 titles)
+  - Document database size and index performance
+
+**Acceptance**: ✅ Medium corpus performs well in UI, all features functional, runtime documented (~5-6 hours)
+
+---
+
+## 📊 Milestone 7: Reporting Requirements Deep Analysis
+
+**Goal**: Comprehensive analysis and visualization of reporting requirements across DC Code
+**Status**: ⚪ Not Started
+
+### Track A: Enhanced Reporting Analysis Pipeline
+
+- [ ] **A7.1** Extend reporting analysis pipeline (REQUIRES: A5.3, BLOCKS: B7.1)
+  - Create `pipeline/60_reporting_deep_analysis.py` or extend `pipeline/50_llm_reporting.py`
+  - Extract additional metadata from sections with reporting requirements:
+    - **Frequency**: annual, quarterly, monthly, ad-hoc, event-triggered
+    - **Responsible entities**: agencies, boards, commissions mentioned in text
+    - **Filing methods**: electronic, written, public notice, etc.
+    - **Consequences/penalties**: what happens for non-compliance
+    - **Trigger events**: time-based vs event-triggered reporting
+  - Categorize reporting types: financial, compliance, informational, public notice
+  - Identify cross-references between related reporting requirements
+  - Use LLM (Gemini/Ollama) for extraction and categorization
+  - Output: enhanced NDJSON with additional fields
+  - Support `--in`, `--out` flags and checkpoint resume
+- [ ] **A7.2** Run enhanced reporting analysis (REQUIRES: A7.1)
+  ```bash
+  python pipeline/60_reporting_deep_analysis.py \
+    --in data/outputs/sections_subset.ndjson \
+    --out data/outputs/reporting_enhanced_subset.ndjson
+  ```
+- [ ] **A7.3** Verify enhanced reporting output (REQUIRES: A7.2)
+  ```bash
+  jq -r '.frequency' data/outputs/reporting_enhanced_subset.ndjson | sort | uniq -c
+  jq -r '.category' data/outputs/reporting_enhanced_subset.ndjson | sort | uniq -c
+  ```
+
+**Acceptance**: ✅ Enhanced reporting metadata extracted with frequency, entities, categories
+
+---
+
+### Track B: Store Enhanced Reporting Metadata
+
+- [ ] **B7.1** Create schema migration for reporting metadata (REQUIRES: B5.3, BLOCKS: B7.2)
+  - Create `dbtools/schema_migrations/add_reporting_metadata.sql`
+  - Add columns to `dc_sections`:
+    - `reporting_frequency` TEXT (annual|quarterly|monthly|ad-hoc|event-triggered|null)
+    - `reporting_category` TEXT (financial|compliance|informational|notice|null)
+    - `reporting_trigger` TEXT (time-based|event-triggered|null)
+  - Create `dc_reporting_entities` table:
+    - `id` SERIAL PRIMARY KEY
+    - `section_id` TEXT REFERENCES dc_sections
+    - `entity_name` TEXT (agency/board/commission name)
+    - `entity_type` TEXT (agency|board|commission|department)
+  - Create `dc_reporting_related` table for cross-references between reporting requirements:
+    - `section_a` TEXT REFERENCES dc_sections
+    - `section_b` TEXT REFERENCES dc_sections
+    - `relationship_type` TEXT (duplicates|complements|conflicts)
+  - Add indexes on new columns
+  - Run migration against Neon DB
+- [ ] **B7.2** Implement `dbtools/load_reporting_enhanced.py` (REQUIRES: A7.2, B7.1)
+  - Read `reporting_enhanced_subset.ndjson`
+  - Update `dc_sections` with new reporting metadata columns
+  - Insert reporting entities into `dc_reporting_entities`
+  - Insert related reporting requirements into `dc_reporting_related`
+  - Batch operations with ON CONFLICT handling
+  - .state file for resume
+  - Support `--input` flag
+- [ ] **B7.3** Run enhanced reporting loader (REQUIRES: B7.2)
+  ```bash
+  python dbtools/load_reporting_enhanced.py \
+    --input data/outputs/reporting_enhanced_subset.ndjson
+  ```
+- [ ] **B7.4** Verify enhanced data loaded (REQUIRES: B7.3)
+  ```bash
+  psql $DATABASE_URL -c "SELECT reporting_frequency, COUNT(*) FROM dc_sections WHERE has_reporting = true GROUP BY reporting_frequency;"
+  psql $DATABASE_URL -c "SELECT reporting_category, COUNT(*) FROM dc_sections WHERE has_reporting = true GROUP BY reporting_category;"
+  psql $DATABASE_URL -c "SELECT COUNT(*) FROM dc_reporting_entities;"
+  ```
+
+**Acceptance**: ✅ Enhanced reporting metadata stored, entities and relationships tracked
+
+---
+
+### Track C: Reporting Visualization & Analysis UI
+
+- [ ] **C7.1** Create reporting dashboard foundation (REQUIRES: C5.5.6, B7.4)
+  - Enhance `/reporting` page created in C5.5.6
+  - Add overview stats panel:
+    - Total reporting requirements
+    - Breakdown by category (pie chart or bar chart)
+    - Breakdown by frequency (timeline visualization)
+    - Top entities with most reporting requirements
+  - Keep existing table/card view and filters from C5.5.6
+- [ ] **C7.2** Add reporting analytics views (REQUIRES: C7.1)
+  - Create `/reporting/timeline` view:
+    - Calendar/timeline view showing when reports are due
+    - Filter by month, quarter, year
+    - Color-code by category
+  - Create `/reporting/entities` view:
+    - List of agencies/boards/commissions
+    - Show count of reporting requirements per entity
+    - Click to see all requirements for that entity
+  - Add navigation between views in `/reporting` layout
+- [ ] **C7.3** Add advanced reporting visualizations (REQUIRES: C7.2)
+  - Network graph showing related reporting requirements
+  - Use D3.js or similar for interactive visualization
+  - Show connections: duplicates, complements, conflicts
+  - Click nodes to navigate to section detail
+- [ ] **C7.4** Add export functionality (REQUIRES: C7.1)
+  - Export filtered reporting requirements to CSV
+  - Export deadline calendar to iCal format
+  - "Export" button in reporting dashboard
+- [ ] **C7.5** Integrate reporting into main navigation (REQUIRES: C7.1)
+  - Add "Reporting Requirements" link to Navigation component
+  - Add reporting category badges to search results when applicable
+  - Add link to `/reporting` from section detail pages with reporting
+- [ ] **C7.6** Test reporting features (REQUIRES: C7.1-C7.5)
+  - Test all filtering and sorting
+  - Verify visualizations render correctly
+  - Test exports (CSV, iCal)
+  - Check mobile responsiveness
+  - Verify navigation integration
+
+**Acceptance**: ✅ Comprehensive reporting dashboard with stats, timeline, entity views, network visualization, and export
+
+---
+
+## 🌐 Milestone 8: Full DC Code Corpus
 
 **Goal**: Process entire DC Code, deploy to production
 **Status**: ⚪ Not Started
 
 ### Track A: Full Corpus Processing
 
-- [ ] **A6.1** Create `scripts/run_all_subset.sh`
+- [ ] **A8.1** Create `scripts/run_all_subset.sh`
   - Runs all pipeline scripts on subset data sequentially
   - Checks for errors after each step
-- [ ] **A6.2** Create `scripts/run_all_full.sh`
+- [ ] **A8.2** Create `scripts/run_all_full.sh`
   - Runs all pipeline scripts on full `data/raw/dc-law-xml/`
   - Same as subset but points to full data
-- [ ] **A6.3** Run full corpus pipeline
+- [ ] **A8.3** Run full corpus pipeline
   ```bash
   ./scripts/run_all_full.sh
   # This will take hours/days depending on machine
   # All scripts resume from checkpoints if interrupted
   ```
-- [ ] **A6.4** Verify all full NDJSON files exist
+- [ ] **A8.4** Verify all full NDJSON files exist
   ```bash
   ls -lh data/outputs/*.ndjson
   ```
@@ -509,7 +873,7 @@ Track development progress across all three parallel tracks (A: Pipeline, B: Dat
 
 ### Track B: Load Full Corpus
 
-- [ ] **B6.1** Run all loaders on full data
+- [ ] **B8.1** Run all loaders on full data
   ```bash
   python dbtools/load_sections.py --input data/outputs/sections.ndjson
   python dbtools/load_refs.py --input data/outputs/refs.ndjson
@@ -519,12 +883,12 @@ Track development progress across all three parallel tracks (A: Pipeline, B: Dat
   python dbtools/load_similarities.py --input data/outputs/similarities.ndjson
   python dbtools/load_reporting.py --input data/outputs/reporting.ndjson
   ```
-- [ ] **B6.2** Verify full corpus loaded
+- [ ] **B8.2** Verify full corpus loaded
   ```bash
   psql $DATABASE_URL -c "SELECT COUNT(*) FROM dc_sections;"
   # Should be full DC Code section count (thousands)
   ```
-- [ ] **B6.3** Analyze database size and performance
+- [ ] **B8.3** Analyze database size and performance
   ```sql
   SELECT pg_size_pretty(pg_total_relation_size('dc_sections'));
   ANALYZE dc_sections;  -- Update query planner statistics
@@ -536,26 +900,26 @@ Track development progress across all three parallel tracks (A: Pipeline, B: Dat
 
 ### Track C: Production Optimizations
 
-- [x] **C6.1** Add pagination to `/search` (limit/offset) *(completed in Milestone 2)*
+- [x] **C8.1** Add pagination to `/search` (limit/offset) *(completed in Milestone 2)*
   - Pagination implemented in both API and UI
   - Search API supports page/limit parameters
   - UI has Previous/Next buttons and page count display
-- [ ] **C6.2** Add caching for common queries
+- [ ] **C8.2** Add caching for common queries
   - Consider React Query or SWR
-- [ ] **C6.3** Optimize database queries
+- [ ] **C8.3** Optimize database queries
   - Add indexes if slow queries identified
   - Use EXPLAIN ANALYZE to check query plans
-- [x] **C6.4** Create landing page (`apps/web/app/page.tsx`) *(completed early in Milestone 1)*
+- [x] **C8.4** Create landing page (`apps/web/app/page.tsx`) *(completed early in Milestone 1)*
   - Project description
   - Quick search box (redirects to `/search`)
   - Feature highlights
   - Stats (total sections, titles, etc.)
-- [ ] **C6.5** Deploy to Vercel
+- [ ] **C8.5** Deploy to Vercel
   ```bash
   cd apps/web
   vercel --prod
   ```
-- [ ] **C6.6** Test production deployment
+- [ ] **C8.6** Test production deployment
   - Verify search works
   - Check loading performance
   - Test on mobile

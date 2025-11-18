@@ -38,16 +38,12 @@ GEMINI_MODELS = [
 ]
 
 OLLAMA_HOST = "http://localhost:11434"
-OLLAMA_PHI4_MODEL = "phi4-reasoning:plus"
-OLLAMA_PHI35_MODEL = "phi3.5"
+OLLAMA_MODEL = "phi3.5"
 
 # Rate limiting for Gemini free tier
 GEMINI_RPM_LIMIT = 15  # requests per minute
 GEMINI_RPD_LIMIT = 1500  # requests per day
 RPM_WINDOW = 60  # seconds
-
-# Rate limiting for phi4-reasoning:plus (minimum 60 seconds between calls)
-PHI4_MIN_INTERVAL = 60  # seconds
 
 CHECKPOINT_FILE = Path("data/interim/similarity_classification.ckpt")
 MAX_TEXT_LENGTH = 2000  # Truncate each section text
@@ -237,7 +233,7 @@ GUIDELINES:
         return None
 
 
-def classify_with_ollama(text_a: str, text_b: str, section_a_id: str, section_b_id: str, model: str = OLLAMA_PHI35_MODEL) -> Optional[dict]:
+def classify_with_ollama(text_a: str, text_b: str, section_a_id: str, section_b_id: str, model: str = OLLAMA_MODEL) -> Optional[dict]:
     """
     Classify similarity relationship using Ollama models.
 
@@ -316,7 +312,7 @@ def classify_similarity(
     Classify similarity using Gemini models with multiple fallbacks, then Ollama.
 
     Tries models in order: gemini-2.5-flash -> gemini-2.5-flash-lite ->
-    gemini-2.0-flash -> gemini-2.0-flash-lite -> phi4-reasoning:plus (if 60s passed) -> phi3.5
+    gemini-2.0-flash -> gemini-2.0-flash-lite -> phi3.5
 
     Returns:
         (classification_dict, model_used)
@@ -333,37 +329,14 @@ def classify_similarity(
                 # Log the failed attempt but continue to next model
                 logger.debug(f"Failed with {model}, trying next model")
 
-    # All Gemini models failed or rate limited, try Ollama models
-    now = time.time()
-    last_phi4_call = stats.get('last_phi4_call', 0)
-    time_since_phi4 = now - last_phi4_call
+    # All Gemini models failed or rate limited, fallback to Ollama
+    if not stats.get('fallback_to_ollama_logged'):
+        logger.info("⚠ All Gemini models failed/unavailable, falling back to Ollama phi3.5")
+        stats['fallback_to_ollama_logged'] = True
 
-    # Try phi4-reasoning:plus if at least 60 seconds have passed since last call
-    if time_since_phi4 >= PHI4_MIN_INTERVAL:
-        if not stats.get('fallback_to_phi4_logged'):
-            logger.info("⚠ All Gemini models failed/unavailable, trying Ollama phi4-reasoning:plus")
-            stats['fallback_to_phi4_logged'] = True
-
-        result = classify_with_ollama(text_a, text_b, section_a_id, section_b_id, OLLAMA_PHI4_MODEL)
-        if result:
-            stats['last_phi4_call'] = now
-            logger.debug(f"Successfully used {OLLAMA_PHI4_MODEL} for {section_a_id}-{section_b_id}")
-            return result, OLLAMA_PHI4_MODEL
-        else:
-            logger.debug(f"Failed with {OLLAMA_PHI4_MODEL}, falling back to phi3.5")
-    else:
-        # Skip phi4 due to rate limiting
-        remaining = PHI4_MIN_INTERVAL - time_since_phi4
-        logger.debug(f"Skipping {OLLAMA_PHI4_MODEL} (rate limited: {remaining:.0f}s remaining)")
-
-    # Final fallback to phi3.5
-    if not stats.get('fallback_to_phi35_logged'):
-        logger.info("⚠ Falling back to Ollama phi3.5")
-        stats['fallback_to_phi35_logged'] = True
-
-    result = classify_with_ollama(text_a, text_b, section_a_id, section_b_id, OLLAMA_PHI35_MODEL)
+    result = classify_with_ollama(text_a, text_b, section_a_id, section_b_id, OLLAMA_MODEL)
     if result:
-        return result, OLLAMA_PHI35_MODEL
+        return result, OLLAMA_MODEL
 
     return None, "failed"
 
@@ -460,12 +433,11 @@ def main():
         logger.info(f"✓ Gemini models configured with fallback chain:")
         for i, model in enumerate(GEMINI_MODELS):
             logger.info(f"  {i+1}. {model}")
-        logger.info(f"  {len(GEMINI_MODELS)+1}. {OLLAMA_PHI4_MODEL} (if 60s+ since last call)")
-        logger.info(f"  {len(GEMINI_MODELS)+2}. {OLLAMA_PHI35_MODEL} (final fallback)")
-        logger.info(f"  Rate limits: Gemini {GEMINI_RPM_LIMIT} RPM, {GEMINI_RPD_LIMIT} RPD; phi4 min {PHI4_MIN_INTERVAL}s between calls")
+        logger.info(f"  {len(GEMINI_MODELS)+1}. {OLLAMA_MODEL} (final fallback)")
+        logger.info(f"  Rate limits: Gemini {GEMINI_RPM_LIMIT} RPM, {GEMINI_RPD_LIMIT} RPD")
     else:
-        logger.warning(f"✗ Gemini API key not found - will use Ollama models only")
-        logger.info(f"  Fallback: {OLLAMA_PHI4_MODEL} -> {OLLAMA_PHI35_MODEL}")
+        logger.warning(f"✗ Gemini API key not found - will use Ollama only")
+        logger.info(f"  Fallback: {OLLAMA_MODEL}")
         logger.info(f"  Set GEMINI_API_KEY environment variable to enable Gemini")
 
     # Load sections into memory
@@ -481,9 +453,7 @@ def main():
     pairs_processed = 0
     failed_classifications = 0
     stats = {
-        'fallback_to_phi4_logged': False,
-        'fallback_to_phi35_logged': False,
-        'last_phi4_call': 0  # Timestamp of last phi4 call for rate limiting
+        'fallback_to_ollama_logged': False
     }
 
     # Read similarity pairs
@@ -589,7 +559,7 @@ def main():
 
     # Show model usage
     logger.info(f"  Model usage:")
-    for model in GEMINI_MODELS + [OLLAMA_PHI4_MODEL, OLLAMA_PHI35_MODEL]:
+    for model in GEMINI_MODELS + [OLLAMA_MODEL]:
         count = checkpoint["model_usage"].get(model, 0)
         if count > 0:
             logger.info(f"    {model}: {count} calls")
