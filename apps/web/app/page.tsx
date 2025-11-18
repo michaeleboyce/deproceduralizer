@@ -19,7 +19,13 @@ export default function HomePage() {
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
       {/* Minimal Header - Only on Homepage */}
       <header className="border-b border-slate-200/50 bg-white/80 backdrop-blur-sm">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-end">
+        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-end gap-6">
+          <Link
+            href="/reporting"
+            className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
+          >
+            LLM Reporting →
+          </Link>
           <Link
             href="/search"
             className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
