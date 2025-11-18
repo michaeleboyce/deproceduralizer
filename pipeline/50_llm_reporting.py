@@ -31,20 +31,23 @@ logger = setup_logging(__name__)
 
 # API Configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# Model configurations with rate limits (RPM, RPD)
+# Ordered by: daily limit first (to maximize throughput), then RPM for speed
 GEMINI_MODELS = [
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite"
+    {"name": "gemini-2.5-flash-lite", "rpm": 15, "rpd": 1000},  # Best daily limit
+    {"name": "gemini-2.0-flash-lite", "rpm": 30, "rpd": 200},   # Fastest RPM
+    {"name": "gemini-2.0-flash", "rpm": 15, "rpd": 200},
+    {"name": "gemini-2.5-flash", "rpm": 10, "rpd": 250},
 ]
 
 OLLAMA_HOST = "http://localhost:11434"
 OLLAMA_MODEL = "phi3.5"
 
-# Rate limiting for Gemini free tier
-GEMINI_RPM_LIMIT = 15  # requests per minute
-GEMINI_RPD_LIMIT = 1500  # requests per day
+# Rate limiting configuration
 RPM_WINDOW = 60  # seconds
+GEMINI_CALL_DELAY = 0.1  # seconds between Gemini calls to avoid rate limits
+GEMINI_RETRY_INTERVAL = 180  # seconds (3 minutes) before retrying Gemini after fallback
 
 CHECKPOINT_FILE = Path("data/interim/reporting.ckpt")
 MAX_TEXT_LENGTH = 3000  # Truncate text to avoid token limits
@@ -90,46 +93,58 @@ def parse_llm_json(response_text: str) -> Optional[dict]:
 
 
 class RateLimiter:
-    """Track API calls and enforce rate limits."""
+    """Track API calls and enforce rate limits per model."""
 
-    def __init__(self, rpm_limit: int, rpd_limit: int):
-        self.rpm_limit = rpm_limit
-        self.rpd_limit = rpd_limit
-        self.minute_calls = []
-        self.day_calls = 0
-        self.day_start = datetime.utcnow().date()
+    def __init__(self):
+        # Track calls per model: model_name -> {"minute_calls": [], "day_calls": 0, "day_start": date}
+        self.model_trackers = {}
 
-    def wait_if_needed(self):
-        """Sleep if we're approaching rate limits."""
+    def _get_tracker(self, model_config: dict):
+        """Get or create tracker for a model."""
+        model_name = model_config["name"]
+        if model_name not in self.model_trackers:
+            self.model_trackers[model_name] = {
+                "minute_calls": [],
+                "day_calls": 0,
+                "day_start": datetime.utcnow().date()
+            }
+        return self.model_trackers[model_name]
+
+    def wait_if_needed(self, model_config: dict):
+        """Sleep if we're approaching rate limits for this specific model."""
         now = datetime.utcnow()
+        tracker = self._get_tracker(model_config)
+        rpm_limit = model_config["rpm"]
+        rpd_limit = model_config["rpd"]
 
         # Reset day counter if new day
-        if now.date() > self.day_start:
-            self.day_calls = 0
-            self.day_start = now.date()
+        if now.date() > tracker["day_start"]:
+            tracker["day_calls"] = 0
+            tracker["day_start"] = now.date()
 
         # Check daily limit
-        if self.day_calls >= self.rpd_limit:
-            logger.warning(f"Hit daily limit ({self.rpd_limit}), switching to Ollama for remaining requests")
-            return False  # Signal to use fallback
+        if tracker["day_calls"] >= rpd_limit:
+            logger.warning(f"Hit daily limit for {model_config['name']} ({rpd_limit}), trying next model")
+            return False  # Signal to try next model
 
         # Remove calls older than 1 minute
         cutoff = now.timestamp() - RPM_WINDOW
-        self.minute_calls = [t for t in self.minute_calls if t > cutoff]
+        tracker["minute_calls"] = [t for t in tracker["minute_calls"] if t > cutoff]
 
         # Check per-minute limit
-        if len(self.minute_calls) >= self.rpm_limit:
-            sleep_time = RPM_WINDOW - (now.timestamp() - self.minute_calls[0]) + 1
-            logger.info(f"Rate limit approaching, sleeping {sleep_time:.1f}s")
+        if len(tracker["minute_calls"]) >= rpm_limit:
+            sleep_time = RPM_WINDOW - (now.timestamp() - tracker["minute_calls"][0]) + 1
+            logger.info(f"Rate limit for {model_config['name']} approaching, sleeping {sleep_time:.1f}s")
             time.sleep(sleep_time)
-            self.minute_calls = []
+            tracker["minute_calls"] = []
 
-        return True  # Signal OK to use Gemini
+        return True  # Signal OK to use this model
 
-    def record_call(self):
-        """Record that an API call was made."""
-        self.minute_calls.append(datetime.utcnow().timestamp())
-        self.day_calls += 1
+    def record_call(self, model_config: dict):
+        """Record that an API call was made for this model."""
+        tracker = self._get_tracker(model_config)
+        tracker["minute_calls"].append(datetime.utcnow().timestamp())
+        tracker["day_calls"] += 1
 
 
 def get_llm_analysis_gemini(text: str, section_id: str, model: str) -> Optional[dict]:
@@ -361,8 +376,8 @@ def get_llm_analysis(text: str, section_id: str, rate_limiter: RateLimiter, stat
     """
     Analyze section using Gemini models with multiple fallbacks, then Ollama.
 
-    Tries models in order: gemini-2.5-flash -> gemini-2.5-flash-lite ->
-    gemini-2.0-flash -> gemini-2.0-flash-lite -> phi3.5
+    Tries models in order by daily capacity, then RPM speed.
+    After falling back to Ollama, periodically retries Gemini every 3 minutes.
 
     Args:
         text: Section text to analyze
@@ -373,22 +388,58 @@ def get_llm_analysis(text: str, section_id: str, rate_limiter: RateLimiter, stat
     Returns:
         (analysis_dict, model_used)
     """
-    # Try each Gemini model in sequence if rate limit allows
-    if rate_limiter.wait_if_needed():
-        for model in GEMINI_MODELS:
-            result = get_llm_analysis_gemini(text, section_id, model)
+    current_time = time.time()
+
+    # Check if we should retry Gemini (if we've been using fallback for a while)
+    last_gemini_fail = stats.get('last_gemini_fail_time', 0)
+    using_fallback = stats.get('using_fallback', False)
+
+    # If we're using fallback and it's been 3+ minutes, try Gemini again
+    should_retry_gemini = (
+        using_fallback and
+        (current_time - last_gemini_fail) >= GEMINI_RETRY_INTERVAL
+    )
+
+    # Try each Gemini model in sequence
+    if GEMINI_API_KEY and (not using_fallback or should_retry_gemini):
+        if should_retry_gemini:
+            logger.info("⟳ Retrying Gemini after fallback period")
+
+        # Add delay between Gemini calls to avoid rate limits
+        if stats.get('last_gemini_call_time', 0) > 0:
+            time_since_last = current_time - stats.get('last_gemini_call_time', 0)
+            if time_since_last < GEMINI_CALL_DELAY:
+                time.sleep(GEMINI_CALL_DELAY - time_since_last)
+
+        for model_config in GEMINI_MODELS:
+            model_name = model_config["name"]
+
+            # Check rate limits for this specific model
+            if not rate_limiter.wait_if_needed(model_config):
+                logger.debug(f"{model_name} rate limited, trying next model")
+                continue
+
+            stats['last_gemini_call_time'] = time.time()
+            result = get_llm_analysis_gemini(text, section_id, model_name)
             if result:
-                rate_limiter.record_call()
-                logger.debug(f"Successfully used {model} for {section_id}")
-                return result, model
+                rate_limiter.record_call(model_config)
+                logger.debug(f"Successfully used {model_name} for {section_id}")
+                # Successfully used Gemini, clear fallback state
+                if using_fallback:
+                    logger.info("✓ Gemini is working again, resuming normal operation")
+                    stats['using_fallback'] = False
+                return result, model_name
             else:
                 # Log the failed attempt but continue to next model
-                logger.debug(f"Failed with {model}, trying next model")
+                logger.debug(f"Failed with {model_name}, trying next model")
 
     # All Gemini models failed or rate limited, fallback to Ollama
+    stats['last_gemini_fail_time'] = current_time
     if not stats.get('fallback_to_ollama_logged'):
-        logger.info("⚠ All Gemini models failed/unavailable, falling back to Ollama phi3.5")
+        logger.info("⚠ All Gemini models exhausted, falling back to Ollama phi3.5")
+        logger.info(f"  Will retry Gemini every {GEMINI_RETRY_INTERVAL}s")
         stats['fallback_to_ollama_logged'] = True
+    stats['using_fallback'] = True
 
     result = get_llm_analysis_ollama(text, section_id, OLLAMA_MODEL)
     if result:
@@ -456,13 +507,13 @@ def main():
     logger.info(f"Detecting reporting requirements in {input_file}")
     logger.info(f"Pipeline version: {PIPELINE_VERSION}")
 
-    # Clear model configuration logging
+    # Model configuration logging
     if GEMINI_API_KEY:
-        logger.info(f"✓ Gemini models configured with fallback chain:")
-        for i, model in enumerate(GEMINI_MODELS):
-            logger.info(f"  {i+1}. {model}")
+        logger.info(f"✓ Gemini models configured with per-model rate limits:")
+        for i, model_config in enumerate(GEMINI_MODELS):
+            logger.info(f"  {i+1}. {model_config['name']} ({model_config['rpm']} RPM, {model_config['rpd']} RPD)")
         logger.info(f"  {len(GEMINI_MODELS)+1}. {OLLAMA_MODEL} (final fallback)")
-        logger.info(f"  Rate limits: Gemini {GEMINI_RPM_LIMIT} RPM, {GEMINI_RPD_LIMIT} RPD")
+        logger.info(f"  Will retry Gemini every {GEMINI_RETRY_INTERVAL}s after fallback")
     else:
         logger.warning(f"✗ Gemini API key not found - will use Ollama only")
         logger.info(f"  Fallback: {OLLAMA_MODEL}")
@@ -471,8 +522,8 @@ def main():
     # Load checkpoint
     checkpoint = load_checkpoint()
 
-    # Initialize rate limiter
-    rate_limiter = RateLimiter(GEMINI_RPM_LIMIT, GEMINI_RPD_LIMIT)
+    # Initialize rate limiter (tracks all models)
+    rate_limiter = RateLimiter()
 
     # Statistics
     sections_processed = 0
