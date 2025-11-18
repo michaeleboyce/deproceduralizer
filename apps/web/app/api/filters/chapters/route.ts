@@ -13,15 +13,23 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const title = searchParams.get("title");
 
-    let query = db
+    // Build query conditionally
+    const query = db
       .selectDistinct({
         chapter: dcSections.chapterLabel,
       })
-      .from(dcSections);
+      .from(dcSections)
+      .$dynamic();
 
     // Filter by title if provided
     if (title) {
-      query = query.where(eq(dcSections.titleLabel, title));
+      const chapters = await query
+        .where(eq(dcSections.titleLabel, title))
+        .orderBy(dcSections.chapterLabel);
+
+      return NextResponse.json({
+        chapters: chapters.map((c) => c.chapter),
+      });
     }
 
     const chapters = await query.orderBy(dcSections.chapterLabel);
