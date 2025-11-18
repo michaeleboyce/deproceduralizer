@@ -1,0 +1,61 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.log
+.pnpm-debug.log*
+*.tsbuildinfo
+.turbo
+.vercel
+
+# Environment variables
+.env
+.env*.local
+.env.production
+
+# Data directories
+data/raw/*
+data/subsets/*
+data/interim/*
+data/outputs/*
+!data/raw/.gitkeep
+!data/subsets/.gitkeep
+!data/interim/.gitkeep
+!data/outputs/.gitkeep
+
+# Pipeline state files
+*.state
+*.ckpt
+*.checkpoint
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+coverage/
+.coverage
+
+# Build artifacts
+*.pyc
+*.pyo
