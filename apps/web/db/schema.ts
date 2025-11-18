@@ -115,6 +115,23 @@ export const dcSectionHighlights = pgTable("dc_section_highlights", {
   sectionIdx: index("dc_section_highlights_section_idx").on(table.sectionId),
 }));
 
+/**
+ * LLM-based classifications of similarity relationships
+ */
+export const dcSectionSimilarityClassifications = pgTable("dc_section_similarity_classifications", {
+  sectionA: text("section_a").notNull(),
+  sectionB: text("section_b").notNull(),
+  classification: text("classification").notNull(),
+  explanation: text("explanation").notNull(),
+  modelUsed: text("model_used").notNull(),
+  analyzedAt: timestamp("analyzed_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.sectionA, table.sectionB] }),
+  classificationIdx: index("dc_section_similarity_classifications_classification_idx").on(table.classification),
+  modelIdx: index("dc_section_similarity_classifications_model_idx").on(table.modelUsed),
+}));
+
 // Type exports for use in application code
 export type DcSection = typeof dcSections.$inferSelect;
 export type NewDcSection = typeof dcSections.$inferInsert;
@@ -123,3 +140,4 @@ export type DcSectionRef = typeof dcSectionRefs.$inferSelect;
 export type DcSectionDeadline = typeof dcSectionDeadlines.$inferSelect;
 export type DcSectionAmount = typeof dcSectionAmounts.$inferSelect;
 export type DcSectionSimilarity = typeof dcSectionSimilarities.$inferSelect;
+export type DcSectionSimilarityClassification = typeof dcSectionSimilarityClassifications.$inferSelect;
