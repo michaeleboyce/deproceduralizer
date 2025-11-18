@@ -220,7 +220,7 @@ GUIDELINES:
                 "temperature": 0.1,  # Low temperature for consistency
                 "topP": 0.95,
                 "topK": 40,
-                "maxOutputTokens": 500
+                "maxOutputTokens": 2000  # Higher limit for extended thinking models
             }
         }
 
