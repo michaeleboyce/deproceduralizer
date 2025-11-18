@@ -36,12 +36,12 @@ logger = setup_logging(__name__)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # Model configurations with rate limits (RPM, RPD)
-# Ordered by: daily limit first (to maximize throughput), then RPM for speed
+# Ordered by model version: 2.5 Flash -> 2.5 Flash-Lite -> 2.0 Flash -> 2.0 Flash-Lite
 GEMINI_MODELS = [
-    {"name": "gemini-2.5-flash-lite", "rpm": 15, "rpd": 1000},  # Best daily limit
-    {"name": "gemini-2.0-flash-lite", "rpm": 30, "rpd": 200},   # Fastest RPM
-    {"name": "gemini-2.0-flash", "rpm": 15, "rpd": 200},
     {"name": "gemini-2.5-flash", "rpm": 10, "rpd": 250},
+    {"name": "gemini-2.5-flash-lite", "rpm": 15, "rpd": 1000},
+    {"name": "gemini-2.0-flash", "rpm": 15, "rpd": 200},
+    {"name": "gemini-2.0-flash-lite", "rpm": 30, "rpd": 200},
 ]
 
 OLLAMA_HOST = "http://localhost:11434"
@@ -75,7 +75,7 @@ class RateLimiter:
         return self.model_trackers[model_name]
 
     def wait_if_needed(self, model_config: dict):
-        """Sleep if we're approaching rate limits for this specific model."""
+        """Check if model is within rate limits (no sleeping, just skip to next model)."""
         now = datetime.utcnow()
         tracker = self._get_tracker(model_config)
         rpm_limit = model_config["rpm"]
@@ -88,7 +88,7 @@ class RateLimiter:
 
         # Check daily limit
         if tracker["day_calls"] >= rpd_limit:
-            logger.warning(f"Hit daily limit for {model_config['name']} ({rpd_limit}), trying next model")
+            logger.debug(f"Hit daily limit for {model_config['name']} ({rpd_limit}), trying next model")
             return False  # Signal to try next model
 
         # Remove calls older than 1 minute
@@ -97,10 +97,8 @@ class RateLimiter:
 
         # Check per-minute limit
         if len(tracker["minute_calls"]) >= rpm_limit:
-            sleep_time = RPM_WINDOW - (now.timestamp() - tracker["minute_calls"][0]) + 1
-            logger.info(f"Rate limit for {model_config['name']} approaching, sleeping {sleep_time:.1f}s")
-            time.sleep(sleep_time)
-            tracker["minute_calls"] = []
+            logger.debug(f"Hit per-minute limit for {model_config['name']} ({rpm_limit} RPM), trying next model")
+            return False  # Signal to try next model
 
         return True  # Signal OK to use this model
 
