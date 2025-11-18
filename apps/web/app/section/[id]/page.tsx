@@ -282,8 +282,71 @@ export default async function SectionPage({
           {/* Mobile TOC - Sticky at top */}
           <MobileTableOfContents items={tocItems} />
 
-          {/* Desktop Layout: Content + Sidebar */}
+          {/* Desktop Layout: Sidebar + Content */}
           <div className="lg:flex lg:gap-8">
+            {/* Desktop Sidebar - Table of Contents */}
+            <aside className="hidden lg:block lg:w-64 flex-shrink-0">
+              <div className="sticky top-8">
+                <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
+                  <h3 className="text-sm font-semibold text-slate-900 mb-3">On This Page</h3>
+                  <nav className="space-y-1">
+                    {tocItems.map((item) => (
+                      <a
+                        key={item.id}
+                        href={`#${item.id}`}
+                        className="block px-3 py-2 text-sm text-slate-600 hover:text-teal-700 hover:bg-teal-50 rounded-md transition-colors"
+                      >
+                        {item.label}
+                      </a>
+                    ))}
+                  </nav>
+                </div>
+
+                {/* Quick Stats */}
+                <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4 mt-4">
+                  <h3 className="text-sm font-semibold text-slate-900 mb-3">Quick Stats</h3>
+                  <div className="space-y-2 text-sm">
+                    {enhancedObligations.length > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-600">Obligations:</span>
+                        <span className="font-medium text-slate-900">{enhancedObligations.length}</span>
+                      </div>
+                    )}
+                    {deadlines.length > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-600">Deadlines:</span>
+                        <span className="font-medium text-slate-900">{deadlines.length}</span>
+                      </div>
+                    )}
+                    {amounts.length > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-600">Amounts:</span>
+                        <span className="font-medium text-slate-900">{amounts.length}</span>
+                      </div>
+                    )}
+                    {referencesFrom.length > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-600">Refs From:</span>
+                        <span className="font-medium text-slate-900">{referencesFrom.length}</span>
+                      </div>
+                    )}
+                    {referencesTo.length > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-600">Refs To:</span>
+                        <span className="font-medium text-slate-900">{referencesTo.length}</span>
+                      </div>
+                    )}
+                    {similarSections.length > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-600">Similar:</span>
+                        <span className="font-medium text-slate-900">{similarSections.length}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </aside>
+
             {/* Main Content */}
             <div className="flex-1 lg:max-w-4xl">
           {/* Header */}
@@ -621,69 +684,6 @@ export default async function SectionPage({
             </div>
           )}
             </div>
-
-            {/* Desktop Sidebar - Table of Contents */}
-            <aside className="hidden lg:block lg:w-64 flex-shrink-0">
-              <div className="sticky top-8">
-                <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
-                  <h3 className="text-sm font-semibold text-slate-900 mb-3">On This Page</h3>
-                  <nav className="space-y-1">
-                    {tocItems.map((item) => (
-                      <a
-                        key={item.id}
-                        href={`#${item.id}`}
-                        className="block px-3 py-2 text-sm text-slate-600 hover:text-teal-700 hover:bg-teal-50 rounded-md transition-colors"
-                      >
-                        {item.label}
-                      </a>
-                    ))}
-                  </nav>
-                </div>
-
-                {/* Quick Stats */}
-                <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4 mt-4">
-                  <h3 className="text-sm font-semibold text-slate-900 mb-3">Quick Stats</h3>
-                  <div className="space-y-2 text-sm">
-                    {enhancedObligations.length > 0 && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-600">Obligations:</span>
-                        <span className="font-medium text-slate-900">{enhancedObligations.length}</span>
-                      </div>
-                    )}
-                    {deadlines.length > 0 && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-600">Deadlines:</span>
-                        <span className="font-medium text-slate-900">{deadlines.length}</span>
-                      </div>
-                    )}
-                    {amounts.length > 0 && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-600">Amounts:</span>
-                        <span className="font-medium text-slate-900">{amounts.length}</span>
-                      </div>
-                    )}
-                    {referencesFrom.length > 0 && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-600">Refs From:</span>
-                        <span className="font-medium text-slate-900">{referencesFrom.length}</span>
-                      </div>
-                    )}
-                    {referencesTo.length > 0 && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-600">Refs To:</span>
-                        <span className="font-medium text-slate-900">{referencesTo.length}</span>
-                      </div>
-                    )}
-                    {similarSections.length > 0 && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-600">Similar:</span>
-                        <span className="font-medium text-slate-900">{similarSections.length}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </aside>
           </div>
         </div>
       </div>
