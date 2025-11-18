@@ -5,6 +5,7 @@ import {
   sections,
   sectionDeadlines,
   sectionAmounts,
+  obligations,
   sectionRefs,
   sectionSimilarities,
   sectionSimilarityClassifications,
@@ -93,6 +94,31 @@ export default async function SectionPage({
       eq(sectionAmounts.jurisdiction, jurisdiction),
       eq(sectionAmounts.sectionId, id)
     ));
+
+  // Fetch enhanced obligations (categorized obligations from LLM analysis)
+  const enhancedObligations = await db
+    .select({
+      category: obligations.category,
+      phrase: obligations.phrase,
+      value: obligations.value,
+      unit: obligations.unit,
+      confidence: obligations.confidence,
+    })
+    .from(obligations)
+    .where(and(
+      eq(obligations.jurisdiction, jurisdiction),
+      eq(obligations.sectionId, id)
+    ))
+    .orderBy(obligations.category, sql`${obligations.value} DESC NULLS LAST`);
+
+  // Group obligations by category for display
+  const obligationsByCategory = enhancedObligations.reduce((acc, obl) => {
+    if (!acc[obl.category]) {
+      acc[obl.category] = [];
+    }
+    acc[obl.category].push(obl);
+    return acc;
+  }, {} as Record<string, typeof enhancedObligations>);
 
   // Fetch cross-references (both directions)
   const referencesFrom = await db
@@ -235,6 +261,14 @@ export default async function SectionPage({
   const hasObligations =
     deadlines.length > 0 || amounts.length > 0 || referencesFrom.length > 0;
 
+  // Build table of contents
+  const tocItems = [
+    { id: "section-text", label: "Section Text" },
+    similarSections.length > 0 && { id: "similar-sections", label: "Similar Sections" },
+    enhancedObligations.length > 0 && { id: "extracted-obligations", label: "Extracted Obligations" },
+    hasObligations && { id: "obligations-references", label: "Obligations & References" },
+  ].filter(Boolean) as { id: string; label: string }[];
+
   return (
     <>
       <Navigation breadcrumbs={[
@@ -243,7 +277,44 @@ export default async function SectionPage({
         { label: section.citation }
       ]} />
       <div className="min-h-screen bg-slate-50 py-8 px-4">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-7xl mx-auto">
+          {/* Mobile TOC - Sticky at top */}
+          <div className="lg:hidden sticky top-0 z-10 bg-white border-b border-slate-200 mb-6 -mx-4 px-4 py-3 shadow-sm">
+            <details className="group">
+              <summary className="flex items-center justify-between cursor-pointer list-none">
+                <span className="text-sm font-semibold text-slate-700">Jump to Section</span>
+                <svg
+                  className="w-5 h-5 text-slate-500 transition-transform group-open:rotate-180"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </summary>
+              <nav className="mt-3 space-y-1">
+                {tocItems.map((item) => (
+                  <a
+                    key={item.id}
+                    href={`#${item.id}`}
+                    className="block px-3 py-2 text-sm text-slate-600 hover:text-teal-700 hover:bg-teal-50 rounded-md transition-colors"
+                    onClick={(e) => {
+                      // Close the details element after clicking
+                      const details = e.currentTarget.closest('details');
+                      if (details) details.removeAttribute('open');
+                    }}
+                  >
+                    {item.label}
+                  </a>
+                ))}
+              </nav>
+            </details>
+          </div>
+
+          {/* Desktop Layout: Content + Sidebar */}
+          <div className="lg:flex lg:gap-8">
+            {/* Main Content */}
+            <div className="flex-1 lg:max-w-4xl">
           {/* Header */}
           <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6 mb-6">
             {/* Breadcrumbs */}
@@ -296,7 +367,7 @@ export default async function SectionPage({
           )}
 
           {/* Main Content */}
-          <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6 mb-6">
+          <div id="section-text" className="bg-white rounded-lg border border-slate-200 shadow-sm p-6 mb-6 scroll-mt-20">
             <h2 className="text-xl font-semibold text-slate-900 mb-4">
               Section Text
             </h2>
@@ -307,15 +378,151 @@ export default async function SectionPage({
           </div>
 
           {/* Similar Sections */}
-          <SimilarSectionsList
-            currentSectionId={id}
-            currentSectionCitation={section.citation}
-            similarSections={similarSections}
-          />
+          {similarSections.length > 0 && (
+            <div id="similar-sections" className="scroll-mt-20">
+              <SimilarSectionsList
+                currentSectionId={id}
+                currentSectionCitation={section.citation}
+                similarSections={similarSections}
+              />
+            </div>
+          )}
+
+          {/* Enhanced Obligations */}
+          {enhancedObligations.length > 0 && (
+            <div id="extracted-obligations" className="bg-white rounded-lg border border-slate-200 shadow-sm p-6 mb-6 scroll-mt-20">
+              <h2 className="text-xl font-semibold text-slate-900 mb-4">
+                Extracted Obligations ({enhancedObligations.length})
+              </h2>
+
+              {/* Obligations grouped by category */}
+              <div className="space-y-6">
+                {/* Deadlines */}
+                {obligationsByCategory.deadline && (
+                  <div>
+                    <h3 className="text-lg font-medium text-slate-800 mb-3">
+                      ⏰ Deadlines & Time Requirements ({obligationsByCategory.deadline.length})
+                    </h3>
+                    <div className="space-y-2">
+                      {obligationsByCategory.deadline.map((obl, index) => (
+                        <div
+                          key={index}
+                          className="flex gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg"
+                        >
+                          {obl.value && obl.unit && (
+                            <div className="flex-shrink-0">
+                              <span className="inline-block px-3 py-1 bg-amber-600 text-white text-sm font-semibold rounded-full">
+                                {obl.value} {obl.unit}
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex-1">
+                            <p className="text-amber-900 text-sm leading-relaxed">
+                              {obl.phrase}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Constraints */}
+                {obligationsByCategory.constraint && (
+                  <div>
+                    <h3 className="text-lg font-medium text-slate-800 mb-3">
+                      📋 Constraints & Requirements ({obligationsByCategory.constraint.length})
+                    </h3>
+                    <div className="space-y-2">
+                      {obligationsByCategory.constraint.map((obl, index) => (
+                        <div
+                          key={index}
+                          className="flex gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg"
+                        >
+                          {obl.value && obl.unit && (
+                            <div className="flex-shrink-0">
+                              <span className="inline-block px-3 py-1 bg-slate-600 text-white text-sm font-semibold rounded-full">
+                                {obl.value} {obl.unit}
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex-1">
+                            <p className="text-slate-900 text-sm leading-relaxed">
+                              {obl.phrase}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Penalties */}
+                {obligationsByCategory.penalty && (
+                  <div>
+                    <h3 className="text-lg font-medium text-slate-800 mb-3">
+                      ⚠️ Penalties ({obligationsByCategory.penalty.length})
+                    </h3>
+                    <div className="space-y-2">
+                      {obligationsByCategory.penalty.map((obl, index) => (
+                        <div
+                          key={index}
+                          className="flex gap-3 p-3 bg-red-50 border border-red-200 rounded-lg"
+                        >
+                          {obl.value && obl.unit && (
+                            <div className="flex-shrink-0">
+                              <span className="inline-block px-3 py-1 bg-red-600 text-white text-sm font-semibold rounded-full">
+                                {obl.value} {obl.unit}
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex-1">
+                            <p className="text-red-900 text-sm leading-relaxed">
+                              {obl.phrase}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Allocations */}
+                {obligationsByCategory.allocation && (
+                  <div>
+                    <h3 className="text-lg font-medium text-slate-800 mb-3">
+                      💰 Allocations & Amounts ({obligationsByCategory.allocation.length})
+                    </h3>
+                    <div className="space-y-2">
+                      {obligationsByCategory.allocation.map((obl, index) => (
+                        <div
+                          key={index}
+                          className="flex gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-lg"
+                        >
+                          {obl.value && obl.unit && (
+                            <div className="flex-shrink-0">
+                              <span className="inline-block px-3 py-1 bg-emerald-600 text-white text-sm font-semibold rounded-full">
+                                {obl.value} {obl.unit}
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex-1">
+                            <p className="text-emerald-900 text-sm leading-relaxed">
+                              {obl.phrase}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Obligations */}
           {hasObligations && (
-            <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6 mb-6">
+            <div id="obligations-references" className="bg-white rounded-lg border border-slate-200 shadow-sm p-6 mb-6 scroll-mt-20">
               <h2 className="text-xl font-semibold text-slate-900 mb-4">
                 Obligations & References
               </h2>
@@ -442,6 +649,71 @@ export default async function SectionPage({
               </p>
             </div>
           )}
+            </div>
+
+            {/* Desktop Sidebar - Table of Contents */}
+            <aside className="hidden lg:block lg:w-64 flex-shrink-0">
+              <div className="sticky top-8">
+                <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
+                  <h3 className="text-sm font-semibold text-slate-900 mb-3">On This Page</h3>
+                  <nav className="space-y-1">
+                    {tocItems.map((item) => (
+                      <a
+                        key={item.id}
+                        href={`#${item.id}`}
+                        className="block px-3 py-2 text-sm text-slate-600 hover:text-teal-700 hover:bg-teal-50 rounded-md transition-colors"
+                      >
+                        {item.label}
+                      </a>
+                    ))}
+                  </nav>
+                </div>
+
+                {/* Quick Stats */}
+                <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4 mt-4">
+                  <h3 className="text-sm font-semibold text-slate-900 mb-3">Quick Stats</h3>
+                  <div className="space-y-2 text-sm">
+                    {enhancedObligations.length > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-600">Obligations:</span>
+                        <span className="font-medium text-slate-900">{enhancedObligations.length}</span>
+                      </div>
+                    )}
+                    {deadlines.length > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-600">Deadlines:</span>
+                        <span className="font-medium text-slate-900">{deadlines.length}</span>
+                      </div>
+                    )}
+                    {amounts.length > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-600">Amounts:</span>
+                        <span className="font-medium text-slate-900">{amounts.length}</span>
+                      </div>
+                    )}
+                    {referencesFrom.length > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-600">Refs From:</span>
+                        <span className="font-medium text-slate-900">{referencesFrom.length}</span>
+                      </div>
+                    )}
+                    {referencesTo.length > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-600">Refs To:</span>
+                        <span className="font-medium text-slate-900">{referencesTo.length}</span>
+                      </div>
+                    )}
+                    {similarSections.length > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-600">Similar:</span>
+                        <span className="font-medium text-slate-900">{similarSections.length}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </aside>
+          </div>
         </div>
       </div>
     </>

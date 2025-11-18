@@ -91,6 +91,26 @@ export const sectionAmounts = pgTable("section_amounts", {
 }));
 
 /**
+ * Enhanced obligations extracted from sections using LLM analysis
+ * Replaces/extends deadlines and amounts with categorized obligations
+ */
+export const obligations = pgTable("obligations", {
+  id: bigserial("id", { mode: "number" }),
+  jurisdiction: varchar("jurisdiction", { length: 10 }).notNull(),
+  sectionId: text("section_id").notNull(),
+  category: text("category").notNull(), // deadline, amount, reporting, constraint, penalty, allocation, other
+  phrase: text("phrase").notNull(),
+  value: real("value"), // Extracted numeric value (nullable)
+  unit: text("unit"), // Unit of measurement (days, dollars, years, etc.)
+  confidence: real("confidence"), // LLM confidence score (0.0-1.0)
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.jurisdiction, table.id] }),
+  sectionIdx: index("idx_obligations_section").on(table.jurisdiction, table.sectionId),
+  categoryIdx: index("idx_obligations_category").on(table.jurisdiction, table.category),
+}));
+
+/**
  * Global tags for categorization (jurisdiction-agnostic)
  */
 export const globalTags = pgTable("global_tags", {
