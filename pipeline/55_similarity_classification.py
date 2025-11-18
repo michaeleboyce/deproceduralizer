@@ -525,8 +525,13 @@ def main():
             "similarity": similarity
         })
 
+    # Sort by similarity (descending) - process most similar pairs first
+    pairs_to_process.sort(key=lambda x: x["similarity"], reverse=True)
+
     total_pairs = len(pairs_to_process)
     logger.info(f"Found {total_pairs} similarity pairs to classify")
+    if total_pairs > 0:
+        logger.info(f"Processing most similar first (range: {pairs_to_process[0]['similarity']:.3f} to {pairs_to_process[-1]['similarity']:.3f})")
 
     # Process pairs with progress bar
     with NDJSONWriter(str(output_file)) as writer:
