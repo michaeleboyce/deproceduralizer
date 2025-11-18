@@ -23,8 +23,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict
 from tqdm import tqdm
+from dotenv import load_dotenv
 
 from common import NDJSONReader, NDJSONWriter, setup_logging, validate_record, PIPELINE_VERSION
+
+# Load environment variables from .env file
+load_dotenv()
 
 logger = setup_logging(__name__)
 

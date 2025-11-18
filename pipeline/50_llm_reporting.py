@@ -24,8 +24,12 @@ from pathlib import Path
 from typing import Optional
 from tqdm import tqdm
 from collections import Counter
+from dotenv import load_dotenv
 
 from common import NDJSONReader, NDJSONWriter, setup_logging, validate_record, PIPELINE_VERSION
+
+# Load environment variables from .env file
+load_dotenv()
 
 logger = setup_logging(__name__)
 
