@@ -279,7 +279,7 @@ export default async function SectionPage({
       ]} />
       <div className="min-h-screen bg-slate-50 py-8 px-4">
         <div className="max-w-7xl mx-auto">
-          {/* Mobile TOC - Right-side floating button */}
+          {/* Mobile TOC - Sticky at top */}
           <MobileTableOfContents items={tocItems} />
 
           {/* Desktop Layout: Content + Sidebar */}
@@ -308,101 +308,6 @@ export default async function SectionPage({
               <span className="font-mono">{section.citation}</span>
             </div>
           </div>
-
-          {/* Similar Sections Breakdown */}
-          {similarSections.length > 0 && similarSections.some(s => s.classification) && (
-            <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border border-purple-200 shadow-sm p-4 mb-6">
-              <h3 className="text-sm font-semibold text-slate-900 mb-3">Similar Sections by Type</h3>
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(
-                  similarSections
-                    .filter(s => s.classification)
-                    .reduce((acc, s) => {
-                      const cls = s.classification || 'Unknown';
-                      acc[cls] = (acc[cls] || 0) + 1;
-                      return acc;
-                    }, {} as Record<string, number>)
-                ).map(([classification, count]) => (
-                  <span
-                    key={classification}
-                    className="inline-flex items-center gap-2 px-3 py-1.5 bg-white rounded-full border border-purple-200 text-sm"
-                  >
-                    <span className="font-medium text-purple-900">{classification}</span>
-                    <span className="text-xs bg-purple-600 text-white px-2 py-0.5 rounded-full font-semibold">
-                      {count}
-                    </span>
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Quick Statistics */}
-          {(enhancedObligations.length > 0 || deadlines.length > 0 || amounts.length > 0 ||
-            referencesFrom.length > 0 || referencesTo.length > 0 || similarSections.length > 0) && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
-              {enhancedObligations.length > 0 && (
-                <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
-                  <div className="text-2xl font-bold text-teal-700 mb-1">
-                    {enhancedObligations.length}
-                  </div>
-                  <div className="text-xs text-slate-600 font-medium">
-                    Obligations
-                  </div>
-                </div>
-              )}
-              {deadlines.length > 0 && (
-                <div className="bg-white rounded-lg border border-amber-200 shadow-sm p-4">
-                  <div className="text-2xl font-bold text-amber-700 mb-1">
-                    {deadlines.length}
-                  </div>
-                  <div className="text-xs text-slate-600 font-medium">
-                    Deadlines
-                  </div>
-                </div>
-              )}
-              {amounts.length > 0 && (
-                <div className="bg-white rounded-lg border border-emerald-200 shadow-sm p-4">
-                  <div className="text-2xl font-bold text-emerald-700 mb-1">
-                    {amounts.length}
-                  </div>
-                  <div className="text-xs text-slate-600 font-medium">
-                    Amounts
-                  </div>
-                </div>
-              )}
-              {referencesFrom.length > 0 && (
-                <div className="bg-white rounded-lg border border-sky-200 shadow-sm p-4">
-                  <div className="text-2xl font-bold text-sky-700 mb-1">
-                    {referencesFrom.length}
-                  </div>
-                  <div className="text-xs text-slate-600 font-medium">
-                    Refs From
-                  </div>
-                </div>
-              )}
-              {referencesTo.length > 0 && (
-                <div className="bg-white rounded-lg border border-sky-200 shadow-sm p-4">
-                  <div className="text-2xl font-bold text-sky-700 mb-1">
-                    {referencesTo.length}
-                  </div>
-                  <div className="text-xs text-slate-600 font-medium">
-                    Refs To
-                  </div>
-                </div>
-              )}
-              {similarSections.length > 0 && (
-                <div className="bg-white rounded-lg border border-purple-200 shadow-sm p-4">
-                  <div className="text-2xl font-bold text-purple-700 mb-1">
-                    {similarSections.length}
-                  </div>
-                  <div className="text-xs text-slate-600 font-medium">
-                    Similar
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Reporting Requirements */}
           {section.hasReporting && (
