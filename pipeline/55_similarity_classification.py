@@ -2,7 +2,7 @@
 """
 Classify similarity relationships between DC Code sections using LLM analysis.
 
-Uses Gemini 2.0 Flash (free tier) with fallback to Ollama phi3.5 to classify
+Uses Gemini models (free tier) with fallback to Ollama phi4-mini to classify
 why similar sections are related: duplicate, superseded, related, or conflicting.
 
 Usage:
@@ -41,7 +41,7 @@ GEMINI_MODELS = [
 ]
 
 OLLAMA_HOST = "http://localhost:11434"
-OLLAMA_MODEL = "phi3.5"
+OLLAMA_MODEL = "phi4-mini"
 
 # Rate limiting configuration
 RPM_WINDOW = 60  # seconds
@@ -380,7 +380,7 @@ def classify_similarity(
     # All Gemini models failed or rate limited, fallback to Ollama
     stats['last_gemini_fail_time'] = current_time
     if not stats.get('fallback_to_ollama_logged'):
-        logger.info("⚠ All Gemini models exhausted, falling back to Ollama phi3.5")
+        logger.info(f"⚠ All Gemini models exhausted, falling back to Ollama {OLLAMA_MODEL}")
         logger.info(f"  Will retry Gemini every {GEMINI_RETRY_INTERVAL}s")
         stats['fallback_to_ollama_logged'] = True
     stats['using_fallback'] = True

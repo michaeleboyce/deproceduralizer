@@ -2,7 +2,7 @@
 """
 Detect reporting requirements in DC Code sections using LLM analysis.
 
-Uses Gemini 2.5 Flash (free tier) with fallback to Ollama phi3.5 to analyze
+Uses Gemini models (free tier) with fallback to Ollama phi4-mini to analyze
 each section and identify whether it contains reporting, disclosure, or
 documentation requirements.
 
@@ -42,7 +42,7 @@ GEMINI_MODELS = [
 ]
 
 OLLAMA_HOST = "http://localhost:11434"
-OLLAMA_MODEL = "phi3.5"
+OLLAMA_MODEL = "phi4-mini"
 
 # Rate limiting configuration
 RPM_WINDOW = 60  # seconds
@@ -436,7 +436,7 @@ def get_llm_analysis(text: str, section_id: str, rate_limiter: RateLimiter, stat
     # All Gemini models failed or rate limited, fallback to Ollama
     stats['last_gemini_fail_time'] = current_time
     if not stats.get('fallback_to_ollama_logged'):
-        logger.info("⚠ All Gemini models exhausted, falling back to Ollama phi3.5")
+        logger.info(f"⚠ All Gemini models exhausted, falling back to Ollama {OLLAMA_MODEL}")
         logger.info(f"  Will retry Gemini every {GEMINI_RETRY_INTERVAL}s")
         stats['fallback_to_ollama_logged'] = True
     stats['using_fallback'] = True
