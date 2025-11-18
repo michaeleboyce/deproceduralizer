@@ -30,8 +30,12 @@ logger = setup_logging(__name__)
 
 # API Configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = "gemini-2.5-flash"
-GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+GEMINI_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite"
+]
 
 OLLAMA_HOST = "http://localhost:11434"
 OLLAMA_MODEL = "phi3.5"
@@ -121,15 +125,21 @@ def parse_llm_json(response_text: str) -> Optional[dict]:
     return None
 
 
-def classify_with_gemini(text_a: str, text_b: str, section_a_id: str, section_b_id: str) -> Optional[dict]:
+def classify_with_gemini(text_a: str, text_b: str, section_a_id: str, section_b_id: str, model: str) -> Optional[dict]:
     """
     Classify similarity relationship using Gemini API.
+
+    Args:
+        text_a: First section text
+        text_b: Second section text
+        section_a_id: First section ID
+        section_b_id: Second section ID
+        model: Gemini model name to use
 
     Returns:
         Dict with classification and explanation, or None if failed
     """
     if not GEMINI_API_KEY:
-        # Only log this once at startup, not for every pair
         return None
 
     prompt = f"""You are analyzing two similar DC Code sections to classify their relationship.
@@ -178,8 +188,9 @@ GUIDELINES:
             }
         }
 
+        gemini_api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         response = requests.post(
-            f"{GEMINI_API_URL}?key={GEMINI_API_KEY}",
+            f"{gemini_api_url}?key={GEMINI_API_KEY}",
             headers=headers,
             json=payload,
             timeout=30
@@ -291,22 +302,30 @@ def classify_similarity(
     stats: dict
 ) -> tuple[Optional[dict], str]:
     """
-    Classify similarity using Gemini with Ollama fallback.
+    Classify similarity using Gemini models with multiple fallbacks, then Ollama.
+
+    Tries models in order: gemini-2.5-flash -> gemini-2.5-flash-lite ->
+    gemini-2.0-flash -> gemini-2.0-flash-lite -> phi3.5
 
     Returns:
         (classification_dict, model_used)
     """
-    # Try Gemini first if rate limit allows
+    # Try each Gemini model in sequence if rate limit allows
     if rate_limiter.wait_if_needed():
-        result = classify_with_gemini(text_a, text_b, section_a_id, section_b_id)
-        if result:
-            rate_limiter.record_call()
-            return result, GEMINI_MODEL
+        for model in GEMINI_MODELS:
+            result = classify_with_gemini(text_a, text_b, section_a_id, section_b_id, model)
+            if result:
+                rate_limiter.record_call()
+                logger.debug(f"Successfully used {model} for {section_a_id}-{section_b_id}")
+                return result, model
+            else:
+                # Log the failed attempt but continue to next model
+                logger.debug(f"Failed with {model}, trying next model")
 
-    # Fallback to Ollama
-    if not stats.get('fallback_logged'):
-        logger.info("⚠ Falling back to Ollama (Gemini unavailable/rate limited)")
-        stats['fallback_logged'] = True
+    # All Gemini models failed or rate limited, fallback to Ollama
+    if not stats.get('fallback_to_ollama_logged'):
+        logger.info("⚠ All Gemini models failed/unavailable, falling back to Ollama phi3.5")
+        stats['fallback_to_ollama_logged'] = True
 
     result = classify_with_ollama(text_a, text_b, section_a_id, section_b_id)
     if result:
@@ -344,13 +363,16 @@ def load_checkpoint() -> dict:
     if CHECKPOINT_FILE.exists():
         logger.info(f"Loading checkpoint from {CHECKPOINT_FILE}")
         with open(CHECKPOINT_FILE, 'rb') as f:
-            return pickle.load(f)
+            checkpoint = pickle.load(f)
+            # Add model_usage dict if it doesn't exist (backwards compatibility)
+            if "model_usage" not in checkpoint:
+                checkpoint["model_usage"] = {}
+            return checkpoint
 
     return {
         "processed_pairs": set(),  # Set of (section_a, section_b) tuples
         "results": [],             # List of classification records
-        "gemini_calls": 0,
-        "ollama_calls": 0
+        "model_usage": {}          # Dict mapping model name -> call count
     }
 
 
@@ -401,9 +423,11 @@ def main():
 
     # Clear model configuration logging
     if GEMINI_API_KEY:
-        logger.info(f"✓ Gemini 2.0 Flash configured (primary)")
+        logger.info(f"✓ Gemini models configured with fallback chain:")
+        for i, model in enumerate(GEMINI_MODELS):
+            logger.info(f"  {i+1}. {model}")
+        logger.info(f"  {len(GEMINI_MODELS)+1}. {OLLAMA_MODEL} (final fallback)")
         logger.info(f"  Rate limits: {GEMINI_RPM_LIMIT} RPM, {GEMINI_RPD_LIMIT} RPD")
-        logger.info(f"✓ Ollama {OLLAMA_MODEL} configured (fallback)")
     else:
         logger.warning(f"✗ Gemini API key not found - will use Ollama {OLLAMA_MODEL} only")
         logger.info(f"  Set GEMINI_API_KEY environment variable to enable Gemini")
@@ -420,7 +444,7 @@ def main():
     # Statistics
     pairs_processed = 0
     failed_classifications = 0
-    stats = {'fallback_logged': False}  # Track if we've logged fallback message
+    stats = {'fallback_to_ollama_logged': False}  # Track if we've logged fallback message
 
     # Read similarity pairs
     reader = NDJSONReader(str(similarities_file))
@@ -477,10 +501,8 @@ def main():
                 continue
 
             # Track model usage
-            if model_used == GEMINI_MODEL:
-                checkpoint["gemini_calls"] += 1
-            elif model_used == OLLAMA_MODEL:
-                checkpoint["ollama_calls"] += 1
+            if model_used != "failed":
+                checkpoint["model_usage"][model_used] = checkpoint["model_usage"].get(model_used, 0) + 1
 
             # Create output record
             record = {
@@ -524,8 +546,14 @@ def main():
     logger.info(f"Classification complete!")
     logger.info(f"  Total pairs classified: {pairs_processed}")
     logger.info(f"  Failed classifications: {failed_classifications}")
-    logger.info(f"  Gemini API calls: {checkpoint['gemini_calls']}")
-    logger.info(f"  Ollama API calls: {checkpoint['ollama_calls']}")
+
+    # Show model usage
+    logger.info(f"  Model usage:")
+    for model in GEMINI_MODELS + [OLLAMA_MODEL]:
+        count = checkpoint["model_usage"].get(model, 0)
+        if count > 0:
+            logger.info(f"    {model}: {count} calls")
+
     logger.info(f"  Output: {output_file}")
 
     # Show classification distribution
