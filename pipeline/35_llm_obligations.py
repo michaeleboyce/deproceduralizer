@@ -15,6 +15,7 @@ Usage:
 """
 
 import argparse
+import os
 import pickle
 import re
 from datetime import datetime
@@ -22,12 +23,17 @@ from pathlib import Path
 from typing import List
 from tqdm import tqdm
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
 from common import NDJSONReader, NDJSONWriter, setup_logging, validate_record, PIPELINE_VERSION
 from llm_client import LLMClient
 from models import Obligation, ObligationsList
 
 logger = setup_logging(__name__)
+
+# Get number of workers from environment (default to 1 for serial execution)
+WORKERS = int(os.getenv("PIPELINE_WORKERS", "1"))
 
 CHECKPOINT_FILE = Path("data/interim/obligations_enhanced.ckpt")
 MAX_TEXT_LENGTH = 2000  # Truncate text for LLM
@@ -62,7 +68,7 @@ def classify_obligation(
     text: str,
     section_id: str,
     client: LLMClient
-) -> List[Obligation]:
+) -> tuple[List[Obligation], bool]:
     """
     Stage 2: LLM classification of obligation type and extraction.
 
@@ -72,7 +78,7 @@ def classify_obligation(
         client: LLMClient instance
 
     Returns:
-        List of Obligation instances found in the text
+        Tuple of (obligations_list, potential_anachronism flag)
     """
     # Truncate text if too long
     truncated_text = text[:MAX_TEXT_LENGTH]
@@ -97,6 +103,17 @@ TASK: Identify ALL obligations in this section. For each obligation found, extra
 3. **value**: Numeric value if present (e.g., 30 for "30 days", 1000000 for "$1 million")
 
 4. **unit**: Unit of measurement if applicable (e.g., "days", "dollars", "percent", "members")
+
+ANACHRONISM CHECK:
+Also determine if this section contains any ANACHRONISTIC language that suggests the law may be outdated:
+- Obsolete technology (telegram, typewriter, etc.)
+- Outdated terminology (fireman, mailman, etc.)
+- Historical discriminatory language
+- Defunct agencies or institutions
+- Archaic measurements
+- Very old dollar amounts suggesting no inflation updates (e.g., "$5 fine")
+
+Set **potential_anachronism** to true if ANY of these indicators are present, false otherwise.
 
 IMPORTANT:
 - Phrase should be the exact wording from the text (5-100 characters)
@@ -123,7 +140,8 @@ Response format:
       "jurisdiction": "dc",
       "section_id": "{section_id}"
     }}
-  ]
+  ],
+  "potential_anachronism": false
 }}
 """
 
@@ -133,14 +151,14 @@ Response format:
         section_id=section_id
     )
 
-    if response and response.data.obligations:
+    if response and response.data:
         # Add section ID and jurisdiction to each obligation
         for obligation in response.data.obligations:
             obligation.section_id = section_id
             obligation.jurisdiction = "dc"
-        return response.data.obligations
+        return response.data.obligations, response.data.potential_anachronism
 
-    return []
+    return [], False
 
 
 def load_checkpoint() -> dict:
@@ -171,6 +189,48 @@ def save_checkpoint(checkpoint: dict):
     logger.debug(f"💾 Checkpoint saved: {len(checkpoint['processed_ids'])} sections processed")
 
 
+def process_section(section: dict, client: LLMClient) -> tuple[List[dict], bool]:
+    """
+    Process a single section and return obligation records.
+
+    Args:
+        section: Dict with "id" and "text" keys
+        client: LLMClient instance
+
+    Returns:
+        (list of obligation records, anachronism flag)
+    """
+    section_id = section["id"]
+
+    # Classify with LLM
+    obligations, potential_anachronism = classify_obligation(section["text"], section_id, client)
+
+    if not obligations:
+        return [], False
+
+    # Convert to records
+    records = []
+    for obligation in obligations:
+        record = {
+            "jurisdiction": obligation.jurisdiction,
+            "section_id": obligation.section_id,
+            "category": obligation.category,
+            "phrase": obligation.phrase,
+            "value": obligation.value,
+            "unit": obligation.unit,
+            "potential_anachronism": potential_anachronism,
+        }
+
+        # Validate record
+        required_fields = ["jurisdiction", "section_id", "category", "phrase"]
+        if validate_record(record, required_fields):
+            records.append(record)
+        else:
+            logger.error(f"❌ Invalid record for {section_id}, skipping")
+
+    return records, potential_anachronism
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Extract and classify obligations using two-stage LLM approach"
@@ -197,6 +257,11 @@ def main():
         type=int,
         help="Limit number of sections to process (for testing)"
     )
+    parser.add_argument(
+        "--parallel",
+        action="store_true",
+        help="Enable parallel execution of models within tiers (faster but uses more API quota)"
+    )
 
     args = parser.parse_args()
 
@@ -210,12 +275,14 @@ def main():
     logger.info(f"🔍 Extracting enhanced obligations from {input_file}")
     logger.info(f"📊 Pipeline version: {PIPELINE_VERSION}")
     logger.info(f"🤖 Using unified LLM client with Instructor validation")
+    if args.parallel:
+        logger.info(f"⚡ Parallel execution enabled")
 
     # Load checkpoint
     checkpoint = load_checkpoint()
 
     # Initialize LLM client
-    client = LLMClient()
+    client = LLMClient(parallel_execution=args.parallel)
 
     # Statistics
     sections_processed = 0
@@ -263,53 +330,88 @@ def main():
 
     # Stage 2: LLM classification
     logger.info(f"\n🤖 Stage 2: Classifying obligations with LLM...")
+    logger.info(f"Using {WORKERS} worker(s) for parallel processing")
+
+    # Thread-safe checkpoint updates
+    checkpoint_lock = Lock()
 
     with NDJSONWriter(str(output_file)) as writer:
-        for section in tqdm(candidates, desc="Classifying", unit="section"):
-            section_id = section["id"]
+        if WORKERS == 1:
+            # Serial execution (original behavior)
+            for section in tqdm(candidates, desc="Classifying", unit="section"):
+                section_id = section["id"]
+                records, _ = process_section(section, client)
 
-            # Classify with LLM
-            obligations = classify_obligation(section["text"], section_id, client)
-
-            if not obligations:
-                # No obligations found, but mark as processed
-                checkpoint["processed_ids"].add(section_id)
-                checkpoint["classified_count"] = checkpoint.get("classified_count", 0) + 1
-                continue
-
-            # Write each obligation as a separate record
-            for obligation in obligations:
-                record = {
-                    "jurisdiction": obligation.jurisdiction,
-                    "section_id": obligation.section_id,
-                    "category": obligation.category,
-                    "phrase": obligation.phrase,
-                    "value": obligation.value,
-                    "unit": obligation.unit,
-                }
-
-                # Validate record
-                required_fields = ["jurisdiction", "section_id", "category", "phrase"]
-                if not validate_record(record, required_fields):
-                    logger.error(f"❌ Invalid record for {section_id}, skipping")
-                    failed_classifications += 1
+                if not records:
+                    # No obligations found, but mark as processed
+                    with checkpoint_lock:
+                        checkpoint["processed_ids"].add(section_id)
+                        checkpoint["classified_count"] = checkpoint.get("classified_count", 0) + 1
                     continue
 
-                # Write record
-                writer.write(record)
+                # Write each obligation as a separate record
+                for record in records:
+                    writer.write(record)
+                    obligations_found += 1
+                    category_counts[record["category"]] += 1
 
-                # Update statistics
-                obligations_found += 1
-                category_counts[obligation.category] += 1
+                # Update checkpoint
+                with checkpoint_lock:
+                    checkpoint["processed_ids"].add(section_id)
+                    checkpoint["classified_count"] = checkpoint.get("classified_count", 0) + 1
+                sections_processed += 1
 
-            # Update checkpoint
-            checkpoint["processed_ids"].add(section_id)
-            checkpoint["classified_count"] = checkpoint.get("classified_count", 0) + 1
-            sections_processed += 1
+                # Save checkpoint every 5 sections
+                if sections_processed % 5 == 0:
+                    with checkpoint_lock:
+                        save_checkpoint(checkpoint)
+        else:
+            # Parallel execution with ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=WORKERS) as executor:
+                # Submit all tasks
+                future_to_section = {
+                    executor.submit(process_section, section, client): section
+                    for section in candidates
+                }
 
-            # Save checkpoint every 5 sections
-            if sections_processed % 5 == 0:
-                save_checkpoint(checkpoint)
+                # Process completed tasks with progress bar
+                for future in tqdm(as_completed(future_to_section), total=len(candidates), desc="Classifying", unit="section"):
+                    section = future_to_section[future]
+                    section_id = section["id"]
+
+                    try:
+                        records, _ = future.result()
+
+                        if not records:
+                            # No obligations found, but mark as processed
+                            with checkpoint_lock:
+                                checkpoint["processed_ids"].add(section_id)
+                                checkpoint["classified_count"] = checkpoint.get("classified_count", 0) + 1
+                            continue
+
+                        # Write each obligation as a separate record
+                        for record in records:
+                            writer.write(record)
+                            with checkpoint_lock:
+                                obligations_found += 1
+                                category_counts[record["category"]] += 1
+
+                        # Update checkpoint
+                        with checkpoint_lock:
+                            checkpoint["processed_ids"].add(section_id)
+                            checkpoint["classified_count"] = checkpoint.get("classified_count", 0) + 1
+                        sections_processed += 1
+
+                        # Save checkpoint every 5 sections
+                        if sections_processed % 5 == 0:
+                            with checkpoint_lock:
+                                save_checkpoint(checkpoint)
+
+                    except Exception as e:
+                        logger.error(f"Error processing {section_id}: {e}")
+                        failed_classifications += 1
+                        with checkpoint_lock:
+                            checkpoint["processed_ids"].add(section_id)
 
     # Final checkpoint save
     save_checkpoint(checkpoint)
