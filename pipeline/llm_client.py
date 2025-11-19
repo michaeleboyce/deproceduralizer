@@ -762,7 +762,7 @@ Return only the JSON object, nothing else."""
         if self.cascade_strategy == "extended" and GROQ_API_KEY:
             self.stats['last_groq_attempt_time'] = current_time
 
-            for model_config in GROQ_MODELS:
+            for i, model_config in enumerate(GROQ_MODELS):
                 model_name = model_config["name"]
 
                 # Check rate limits for this specific model
@@ -791,6 +791,9 @@ Return only the JSON object, nothing else."""
                     return LLMResponse(data=result, model_used=model_name)
                 else:
                     logger.debug(f"Failed with Groq {model_name}, trying next model")
+                    # Add delay between failed Groq attempts to avoid rapid cycling
+                    if i < len(GROQ_MODELS) - 1:  # Don't delay after the last model
+                        time.sleep(0.5)
 
         # === TIER 3: Fallback to Ollama ===
         if not self.stats.get('fallback_to_ollama_logged'):
