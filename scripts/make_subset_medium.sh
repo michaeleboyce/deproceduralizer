@@ -1,13 +1,13 @@
 #!/bin/bash
 # Create a medium subset of DC Code XML files for scale testing
-# Copies ALL sections from Titles 1-10 with proper directory structure
+# Copies ALL sections from Titles 1-7 with proper directory structure
 
 set -e
 
 SOURCE_DIR="data/raw/dc-law-xml/us/dc/council/code/titles"
 DEST_DIR="data/subsets_medium"
 
-echo "Creating MEDIUM subset of DC Code XML files (Titles 1-10)..."
+echo "Creating MEDIUM subset of DC Code XML files (Titles 1-7)..."
 
 # Check if source exists
 if [ ! -d "$SOURCE_DIR" ]; then
@@ -20,10 +20,10 @@ fi
 rm -rf "$DEST_DIR"
 mkdir -p "$DEST_DIR"
 
-echo "Copying ALL sections from Titles 1-10 with directory structure..."
+echo "Copying ALL sections from Titles 1-7 with directory structure..."
 
-# Copy all sections from Titles 1-10 preserving directory structure
-for i in {1..10}; do
+# Copy all sections from Titles 1-7 preserving directory structure
+for i in {1..7}; do
     TITLE_SOURCE="$SOURCE_DIR/$i"
     TITLE_DEST="$DEST_DIR/$i"
 

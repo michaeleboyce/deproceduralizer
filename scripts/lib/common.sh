@@ -22,7 +22,7 @@ validate_corpus() {
             echo "" >&2
             echo "Corpus definitions:" >&2
             echo "  small  - Titles 1-2 (~100 sections)" >&2
-            echo "  medium - Titles 1-10 (~500-600 sections)" >&2
+            echo "  medium - Titles 1-7 (~350-400 sections)" >&2
             echo "  large  - All DC Code (~50 titles)" >&2
             echo "" >&2
             echo "Usage: $0 --corpus={small|medium|large} [OPTIONS]" >&2
