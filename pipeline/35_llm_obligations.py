@@ -28,6 +28,7 @@ from threading import Lock
 
 from common import NDJSONReader, NDJSONWriter, setup_logging, validate_record, PIPELINE_VERSION
 from llm_factory import create_llm_client, add_cascade_argument
+from llm_client import LLMClient
 from models import Obligation, ObligationsList
 
 logger = setup_logging(__name__)
