@@ -15,17 +15,23 @@ Usage:
 """
 
 import argparse
+import os
 import pickle
 from datetime import datetime
 from pathlib import Path
 from tqdm import tqdm
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
 from common import NDJSONReader, NDJSONWriter, setup_logging, validate_record, PIPELINE_VERSION
 from llm_client import LLMClient
 from models import ReportingRequirement
 
 logger = setup_logging(__name__)
+
+# Get number of workers from environment (default to 1 for serial execution)
+WORKERS = int(os.getenv("PIPELINE_WORKERS", "1"))
 
 CHECKPOINT_FILE = Path("data/interim/reporting.ckpt")
 MAX_TEXT_LENGTH = 3000  # Truncate text to avoid token limits
@@ -80,6 +86,18 @@ GUIDELINES:
 - tags: Use lowercase, focus on WHO reports (mayor, director, agency, board) and WHEN (annual, quarterly, monthly)
 - highlight_phrases: Extract 2-5 key phrases that indicate substantive reporting (e.g., "shall submit a report", "publish statistics", "maintain records")
 - When in doubt, err on the side of has_reporting=false
+
+ANACHRONISM CHECK:
+Also determine if this section contains any ANACHRONISTIC language that suggests the law may be outdated:
+- Obsolete technology (telegram, typewriter, fax, etc.)
+- Outdated terminology (fireman, mailman, colored, etc.)
+- Historical discriminatory language (Jim Crow era terms)
+- Defunct agencies or institutions
+- Archaic measurements or units
+- Gendered professional titles (policeman, chairman, etc.)
+- Very old dollar amounts suggesting no inflation updates (e.g., "$5 fine")
+
+Set **potential_anachronism** to true if ANY of these indicators are present, false otherwise.
 """
 
     response = client.generate(
@@ -126,6 +144,48 @@ def save_checkpoint(checkpoint: dict):
     with open(CHECKPOINT_FILE, 'wb') as f:
         pickle.dump(checkpoint, f)
     logger.debug(f"Saved checkpoint: {len(checkpoint['processed_ids'])} sections processed")
+
+
+def process_section(section: dict, client: LLMClient) -> tuple[dict | None, str, list]:
+    """
+    Process a single section and return the result.
+
+    Args:
+        section: Dict with "id" and "text" keys
+        client: LLMClient instance
+
+    Returns:
+        (record_dict or None, model_used, tags_list)
+    """
+    section_id = section["id"]
+
+    # Analyze with LLM using structured outputs
+    analysis, model_used = get_llm_analysis(section["text"], section_id, client)
+
+    if analysis is None:
+        return None, "failed", []
+
+    # Convert Pydantic model to dict for output
+    record = {
+        "id": analysis.id,
+        "has_reporting": analysis.has_reporting,
+        "reporting_summary": analysis.reporting_summary,
+        "reporting_text": analysis.reporting_text,
+        "tags": analysis.tags,
+        "highlight_phrases": analysis.highlight_phrases,
+        "potential_anachronism": analysis.potential_anachronism,
+        "metadata": analysis.metadata
+    }
+
+    # Validate record
+    required_fields = ["id", "has_reporting", "reporting_summary", "reporting_text", "tags", "highlight_phrases", "potential_anachronism", "metadata"]
+    if not validate_record(record, required_fields):
+        logger.error(f"Invalid record for {section_id}, skipping")
+        return None, "failed", []
+
+    # Return record, model used, and tags
+    tags = record["tags"] if record["has_reporting"] else []
+    return record, model_used, tags
 
 
 def main():
@@ -202,74 +262,121 @@ def main():
 
     total_sections = len(sections_to_process)
     logger.info(f"Found {total_sections} sections to analyze")
+    logger.info(f"Using {WORKERS} worker(s) for parallel processing")
+
+    # Filter out already processed sections
+    sections_to_process = [s for s in sections_to_process if s["id"] not in checkpoint["processed_ids"]]
+    logger.info(f"{len(sections_to_process)} sections remaining to process")
+
+    # Thread-safe checkpoint updates
+    checkpoint_lock = Lock()
 
     # Process sections with progress bar
     with NDJSONWriter(str(output_file)) as writer:
-        for section in tqdm(sections_to_process, desc="Analyzing sections", unit="section"):
-            section_id = section["id"]
+        if WORKERS == 1:
+            # Serial execution (original behavior)
+            for section in tqdm(sections_to_process, desc="Analyzing sections", unit="section"):
+                record, model_used, tags = process_section(section, client)
 
-            # Skip if already processed
-            if section_id in checkpoint["processed_ids"]:
-                logger.debug(f"Skipping already processed section: {section_id}")
-                continue
+                if record is None:
+                    failed_analyses += 1
+                    with checkpoint_lock:
+                        checkpoint["processed_ids"].add(section["id"])
+                    continue
 
-            # Analyze with LLM using structured outputs
-            analysis, model_used = get_llm_analysis(section["text"], section_id, client)
+                # Track model usage
+                if model_used != "failed":
+                    with checkpoint_lock:
+                        checkpoint["model_usage"][model_used] = checkpoint["model_usage"].get(model_used, 0) + 1
 
-            if analysis is None:
-                failed_analyses += 1
-                # Mark as processed even if failed (to avoid retrying forever)
-                checkpoint["processed_ids"].add(section_id)
-                continue
+                # Write record
+                writer.write(record)
 
-            # Track model usage
-            if model_used != "failed":
-                checkpoint["model_usage"][model_used] = checkpoint["model_usage"].get(model_used, 0) + 1
+                # Update statistics
+                with checkpoint_lock:
+                    checkpoint["processed_ids"].add(section["id"])
+                    checkpoint["results"].append(record)
+                sections_processed += 1
 
-            # Convert Pydantic model to dict for output
-            record = {
-                "id": analysis.id,
-                "has_reporting": analysis.has_reporting,
-                "reporting_summary": analysis.reporting_summary,
-                "reporting_text": analysis.reporting_text,
-                "tags": analysis.tags,
-                "highlight_phrases": analysis.highlight_phrases,
-                "metadata": analysis.metadata
-            }
+                if record["has_reporting"]:
+                    sections_with_reporting += 1
+                    all_tags.extend(tags)
 
-            # Validate record
-            required_fields = ["id", "has_reporting", "reporting_summary", "reporting_text", "tags", "highlight_phrases", "metadata"]
-            if not validate_record(record, required_fields):
-                logger.error(f"Invalid record for {section_id}, skipping")
-                failed_analyses += 1
-                checkpoint["processed_ids"].add(section_id)
-                continue
+                    # Log sample to console with colors
+                    GREEN = '\033[92m'
+                    CYAN = '\033[96m'
+                    RESET = '\033[0m'
+                    logger.info(f"\n{GREEN}📋 REPORTING REQUIREMENT FOUND:{RESET}")
+                    logger.info(f"  {CYAN}Section:{RESET} {section['id']}")
+                    logger.info(f"  {CYAN}Summary:{RESET} {record['reporting_summary']}")
+                    logger.info(f"  {CYAN}Tags:{RESET} {', '.join(record['tags']) if record['tags'] else 'none'}")
+                    logger.info(f"  {CYAN}Key Phrases:{RESET} {'; '.join(record['highlight_phrases'][:3]) if record['highlight_phrases'] else 'none'}")
 
-            # Write record
-            writer.write(record)
+                # Save checkpoint every 5 sections
+                if sections_processed % 5 == 0:
+                    with checkpoint_lock:
+                        save_checkpoint(checkpoint)
+        else:
+            # Parallel execution with ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=WORKERS) as executor:
+                # Submit all tasks
+                future_to_section = {
+                    executor.submit(process_section, section, client): section
+                    for section in sections_to_process
+                }
 
-            # Update statistics
-            checkpoint["processed_ids"].add(section_id)
-            checkpoint["results"].append(record)
-            sections_processed += 1
+                # Process completed tasks with progress bar
+                for future in tqdm(as_completed(future_to_section), total=len(sections_to_process), desc="Analyzing sections", unit="section"):
+                    section = future_to_section[future]
+                    section_id = section["id"]
 
-            if record["has_reporting"]:
-                sections_with_reporting += 1
-                all_tags.extend(record["tags"])
+                    try:
+                        record, model_used, tags = future.result()
 
-                # Log sample to console with colors
-                GREEN = '\033[92m'
-                CYAN = '\033[96m'
-                RESET = '\033[0m'
-                logger.info(f"\n{GREEN}📋 REPORTING REQUIREMENT FOUND:{RESET}")
-                logger.info(f"  {CYAN}Section:{RESET} {section_id}")
-                logger.info(f"  {CYAN}Summary:{RESET} {record['reporting_summary']}")
-                logger.info(f"  {CYAN}Tags:{RESET} {', '.join(record['tags']) if record['tags'] else 'none'}")
-                logger.info(f"  {CYAN}Key Phrases:{RESET} {'; '.join(record['highlight_phrases'][:3]) if record['highlight_phrases'] else 'none'}")
+                        if record is None:
+                            failed_analyses += 1
+                            with checkpoint_lock:
+                                checkpoint["processed_ids"].add(section_id)
+                            continue
 
-            # Save checkpoint every 5 sections
-            if sections_processed % 5 == 0:
-                save_checkpoint(checkpoint)
+                        # Track model usage
+                        if model_used != "failed":
+                            with checkpoint_lock:
+                                checkpoint["model_usage"][model_used] = checkpoint["model_usage"].get(model_used, 0) + 1
+
+                        # Write record (writer is thread-safe)
+                        writer.write(record)
+
+                        # Update statistics
+                        with checkpoint_lock:
+                            checkpoint["processed_ids"].add(section_id)
+                            checkpoint["results"].append(record)
+                        sections_processed += 1
+
+                        if record["has_reporting"]:
+                            sections_with_reporting += 1
+                            all_tags.extend(tags)
+
+                            # Log sample to console with colors
+                            GREEN = '\033[92m'
+                            CYAN = '\033[96m'
+                            RESET = '\033[0m'
+                            logger.info(f"\n{GREEN}📋 REPORTING REQUIREMENT FOUND:{RESET}")
+                            logger.info(f"  {CYAN}Section:{RESET} {section_id}")
+                            logger.info(f"  {CYAN}Summary:{RESET} {record['reporting_summary']}")
+                            logger.info(f"  {CYAN}Tags:{RESET} {', '.join(record['tags']) if record['tags'] else 'none'}")
+                            logger.info(f"  {CYAN}Key Phrases:{RESET} {'; '.join(record['highlight_phrases'][:3]) if record['highlight_phrases'] else 'none'}")
+
+                        # Save checkpoint every 5 sections
+                        if sections_processed % 5 == 0:
+                            with checkpoint_lock:
+                                save_checkpoint(checkpoint)
+
+                    except Exception as e:
+                        logger.error(f"Error processing {section_id}: {e}")
+                        failed_analyses += 1
+                        with checkpoint_lock:
+                            checkpoint["processed_ids"].add(section_id)
 
     # Final checkpoint save
     save_checkpoint(checkpoint)

@@ -28,7 +28,8 @@ Optional Arguments:
   --steps=STEPS          Steps to run (default: all)
                          Examples: 'all', '1-3', '1,3,5'
   --clean                Clean start (remove checkpoints)
-  --parallel             Enable parallel LLM execution for faster processing
+  --parallel             Enable parallel LLM model selection (try models concurrently)
+  --workers=N            Process N sections concurrently (default: 1, recommended: 4-8)
   --help                 Show this help message
 
 Pipeline Steps:
@@ -44,14 +45,14 @@ Examples:
   # Run full pipeline on small corpus
   $0 --corpus=small
 
-  # Run specific steps on medium corpus
-  $0 --corpus=medium --steps=1-3
+  # Run with 8 concurrent workers (much faster)
+  $0 --corpus=medium --workers=8
 
-  # Clean start on large corpus with parallel execution
-  $0 --corpus=large --clean --parallel
+  # Combine parallel models + workers for maximum speed
+  $0 --corpus=medium --parallel --workers=8 --clean
 
-  # Run only LLM steps with parallel execution
-  $0 --corpus=small --steps=3,5,6,7 --parallel
+  # Run only LLM steps with 8 workers
+  $0 --corpus=small --steps=3,5,6,7 --workers=8
 
 Notes:
   - Steps 3, 5, 6, 7 require Ollama (LLM)
@@ -70,6 +71,7 @@ CORPUS=""
 STEPS="all"
 CLEAN=false
 PARALLEL=false
+WORKERS=1
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -87,6 +89,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --parallel)
             PARALLEL=true
+            shift
+            ;;
+        --workers=*)
+            WORKERS="${1#*=}"
             shift
             ;;
         --help|-h)
@@ -128,9 +134,20 @@ source .venv/bin/activate
 # Export parallel execution flag if enabled
 if [[ "$PARALLEL" == true ]]; then
     export LLM_PARALLEL_EXECUTION=true
-    log_info "Parallel LLM execution enabled"
+    log_info "Parallel LLM model selection enabled"
 else
     export LLM_PARALLEL_EXECUTION=false
+fi
+
+# Validate and export worker count
+if ! [[ "$WORKERS" =~ ^[0-9]+$ ]] || [[ "$WORKERS" -lt 1 ]]; then
+    echo -e "${RED}ERROR: --workers must be a positive integer${NC}" >&2
+    exit 1
+fi
+
+export PIPELINE_WORKERS=$WORKERS
+if [[ "$WORKERS" -gt 1 ]]; then
+    log_info "Data parallelization enabled: $WORKERS concurrent workers"
 fi
 
 #===============================================================================
