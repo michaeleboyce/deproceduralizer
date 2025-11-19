@@ -1,5 +1,35 @@
 #!/bin/bash
-# Run all pipeline scripts on subset data
+# DEPRECATED: Run all pipeline scripts on subset data
+#
+# ⚠️  WARNING: This script is DEPRECATED and OUTDATED
+# ⚠️
+# ⚠️  This script is missing:
+# ⚠️  - Multi-jurisdiction support (--jurisdiction dc)
+# ⚠️  - Structure data generation
+# ⚠️  - Enhanced LLM obligations
+# ⚠️  - Similarity classification
+# ⚠️
+# ⚠️  Use instead: ./scripts/run-pipeline.sh --corpus=small
+# ⚠️  Or use Make: make pipeline-small
+#
+
+echo "========================================="
+echo "⚠️  DEPRECATED SCRIPT"
+echo "========================================="
+echo ""
+echo "This script is outdated and missing several features."
+echo ""
+echo "Use instead:"
+echo "  ./scripts/run-pipeline.sh --corpus=small"
+echo "Or:"
+echo "  make pipeline-small"
+echo ""
+read -p "Continue with deprecated script anyway? (y/N) " -r
+echo ""
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Aborted. Please use the new scripts."
+    exit 0
+fi
 
 set -e
 

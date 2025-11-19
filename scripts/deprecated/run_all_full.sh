@@ -1,5 +1,35 @@
 #!/bin/bash
-# Run all pipeline scripts on full DC Code corpus
+# DEPRECATED: Run all pipeline scripts on full DC Code corpus
+#
+# ⚠️  WARNING: This script is DEPRECATED and OUTDATED
+# ⚠️
+# ⚠️  This script is missing:
+# ⚠️  - Multi-jurisdiction support (--jurisdiction dc)
+# ⚠️  - Structure data generation
+# ⚠️  - Enhanced LLM obligations
+# ⚠️  - Similarity classification
+# ⚠️
+# ⚠️  Use instead: ./scripts/run-pipeline.sh --corpus=large
+# ⚠️  Or use Make: make pipeline-large
+#
+
+echo "========================================="
+echo "⚠️  DEPRECATED SCRIPT"
+echo "========================================="
+echo ""
+echo "This script is outdated and missing several features."
+echo ""
+echo "Use instead:"
+echo "  ./scripts/run-pipeline.sh --corpus=large"
+echo "Or:"
+echo "  make pipeline-large"
+echo ""
+read -p "Continue with deprecated script anyway? (y/N) " -r
+echo ""
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Aborted. Please use the new scripts."
+    exit 0
+fi
 
 set -e
 
@@ -11,12 +41,6 @@ echo "WARNING: This will take several hours/days depending on your machine."
 echo "All scripts support pause/resume via checkpoints."
 echo "Press Ctrl+C to stop at any time; re-run to resume."
 echo ""
-read -p "Continue? (y/N) " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "Aborted."
-    exit 1
-fi
 
 # Activate virtual environment
 source .venv/bin/activate

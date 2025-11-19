@@ -1,6 +1,34 @@
 #!/bin/bash
-# Run all pipeline scripts on MEDIUM subset data (Titles 1-10)
-# Estimated runtime: ~5-6 hours
+# DEPRECATED: Run all pipeline scripts on MEDIUM subset data (Titles 1-10)
+#
+# ⚠️  WARNING: This script is DEPRECATED and OUTDATED
+# ⚠️
+# ⚠️  This script is missing:
+# ⚠️  - Multi-jurisdiction support (--jurisdiction dc)
+# ⚠️  - Structure data generation
+# ⚠️  - Correct CLI flags for similarity classification
+# ⚠️
+# ⚠️  Use instead: ./scripts/run-pipeline.sh --corpus=medium
+# ⚠️  Or use Make: make pipeline-medium
+#
+
+echo "========================================="
+echo "⚠️  DEPRECATED SCRIPT"
+echo "========================================="
+echo ""
+echo "This script is outdated and missing several features."
+echo ""
+echo "Use instead:"
+echo "  ./scripts/run-pipeline.sh --corpus=medium"
+echo "Or:"
+echo "  make pipeline-medium"
+echo ""
+read -p "Continue with deprecated script anyway? (y/N) " -r
+echo ""
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Aborted. Please use the new scripts."
+    exit 0
+fi
 
 set -e
 
