@@ -28,6 +28,7 @@ Optional Arguments:
   --steps=STEPS          Steps to run (default: all)
                          Examples: 'all', '1-3', '1,3,5'
   --clean                Clean start (remove checkpoints)
+  --parallel             Enable parallel LLM execution for faster processing
   --help                 Show this help message
 
 Pipeline Steps:
@@ -37,6 +38,7 @@ Pipeline Steps:
   4. Compute similarities (embeddings)
   5. Detect reporting requirements (LLM)
   6. Classify similarity relationships (LLM)
+  7. Detect anachronisms (LLM)
 
 Examples:
   # Run full pipeline on small corpus
@@ -45,14 +47,14 @@ Examples:
   # Run specific steps on medium corpus
   $0 --corpus=medium --steps=1-3
 
-  # Clean start on large corpus
-  $0 --corpus=large --clean
+  # Clean start on large corpus with parallel execution
+  $0 --corpus=large --clean --parallel
 
-  # Run only LLM steps
-  $0 --corpus=small --steps=3,5,6
+  # Run only LLM steps with parallel execution
+  $0 --corpus=small --steps=3,5,6,7 --parallel
 
 Notes:
-  - Steps 3, 5, 6 require Ollama (LLM)
+  - Steps 3, 5, 6, 7 require Ollama (LLM)
   - Step 4 requires embeddings (Ollama nomic-embed-text)
   - All steps support checkpoint/resume
   - Use --clean to start fresh and remove checkpoints
@@ -67,6 +69,7 @@ EOF
 CORPUS=""
 STEPS="all"
 CLEAN=false
+PARALLEL=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -80,6 +83,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --clean)
             CLEAN=true
+            shift
+            ;;
+        --parallel)
+            PARALLEL=true
             shift
             ;;
         --help|-h)
@@ -118,6 +125,14 @@ validate_source_directory "$CORPUS"
 # Activate virtual environment
 source .venv/bin/activate
 
+# Export parallel execution flag if enabled
+if [[ "$PARALLEL" == true ]]; then
+    export LLM_PARALLEL_EXECUTION=true
+    log_info "Parallel LLM execution enabled"
+else
+    export LLM_PARALLEL_EXECUTION=false
+fi
+
 #===============================================================================
 # PARSE STEP RANGE
 #===============================================================================
@@ -126,7 +141,7 @@ parse_steps() {
     local steps=$1
 
     if [[ "$steps" == "all" ]]; then
-        echo "1 2 3 4 5 6"
+        echo "1 2 3 4 5 6 7"
         return
     fi
 
