@@ -281,7 +281,10 @@ class Obligation(BaseModel):
         description="Jurisdiction code",
         max_length=10,
     )
-    section_id: str = Field(..., description="Section containing the obligation")
+    section_id: str = Field(
+        default="",
+        description="Section containing the obligation (set by pipeline, not LLM)",
+    )
     category: Literal["deadline", "constraint", "allocation", "penalty"] = Field(
         ..., description="Type of obligation"
     )
@@ -407,7 +410,10 @@ class ReportingRequirement(BaseModel):
         description="Jurisdiction code",
         max_length=10,
     )
-    id: str = Field(..., description="Section ID")
+    id: str = Field(
+        default="",
+        description="Section ID (set by pipeline, not LLM)",
+    )
     has_reporting: bool = Field(
         ...,
         description="True if section mandates any reporting, filing, or notice requirement",
@@ -632,7 +638,10 @@ class AnachronismAnalysis(BaseModel):
         description="Jurisdiction code",
         max_length=10,
     )
-    section_id: str = Field(..., description="Section ID being analyzed")
+    section_id: str = Field(
+        default="",
+        description="Section ID being analyzed (set by pipeline, not LLM)",
+    )
     has_anachronism: bool = Field(
         ...,
         description="True if section contains any anachronistic language",
