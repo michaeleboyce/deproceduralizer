@@ -53,6 +53,8 @@ def get_llm_analysis(text: str, section_id: str, client: LLMClient) -> tuple[Rep
 
 TASK: Determine if this section requires an entity to compile and submit regular reports, data, statistics, or documentation to an oversight body.
 
+IMPORTANT: Only flag as has_reporting=true when you are CERTAIN the text describes a substantive reporting requirement. When uncertain or ambiguous, default to has_reporting=false. Be conservative in your assessment.
+
 WHAT COUNTS AS REPORTING (set has_reporting=true):
 - Regular/periodic reports (annual, quarterly, monthly reports)
 - Submission of compiled data, statistics, or performance metrics
@@ -66,14 +68,18 @@ WHAT DOES NOT COUNT (set has_reporting=false):
 - Basic communication requirements
 - Posting of signs or public notices
 - Authority to remove/appoint without reporting element
+- Ambiguous or unclear text that might suggest reporting but doesn't explicitly require it
 
 SECTION TEXT:
 {truncated_text}
 
 GUIDELINES:
+- Only flag has_reporting=true when the text CLEARLY and EXPLICITLY requires substantive reporting
+- reporting_text: Extract the EXACT full text from the section that describes the reporting requirement. Include complete sentences that contain the requirement, not just fragments. Copy the text verbatim from the section.
+- reporting_summary: Keep concise (1-2 sentences) and specific about WHAT is reported and TO WHOM
 - tags: Use lowercase, focus on WHO reports (mayor, director, agency, board) and WHEN (annual, quarterly, monthly)
 - highlight_phrases: Extract 2-5 key phrases that indicate substantive reporting (e.g., "shall submit a report", "publish statistics", "maintain records")
-- Keep reporting_summary concise and specific about WHAT is reported and TO WHOM
+- When in doubt, err on the side of has_reporting=false
 """
 
     response = client.generate(
@@ -142,6 +148,13 @@ def main():
         type=int,
         help="Limit number of sections to process (for testing)"
     )
+    parser.add_argument(
+        "--cascade-strategy",
+        dest="cascade_strategy",
+        choices=["simple", "extended"],
+        default="extended",
+        help="LLM cascade strategy: 'simple' (Gemini→Ollama) or 'extended' (Gemini→Groq→Ollama). Defaults to 'extended'."
+    )
 
     args = parser.parse_args()
 
@@ -154,13 +167,12 @@ def main():
 
     logger.info(f"Detecting reporting requirements in {input_file}")
     logger.info(f"Pipeline version: {PIPELINE_VERSION}")
-    logger.info(f"Using unified LLM client with Instructor validation")
 
     # Load checkpoint
     checkpoint = load_checkpoint()
 
-    # Initialize LLM client
-    client = LLMClient()
+    # Initialize LLM client with extended cascade strategy for reporting detection
+    client = LLMClient(cascade_strategy=args.cascade_strategy)
 
     # Statistics
     sections_processed = 0
@@ -219,13 +231,14 @@ def main():
                 "id": analysis.id,
                 "has_reporting": analysis.has_reporting,
                 "reporting_summary": analysis.reporting_summary,
+                "reporting_text": analysis.reporting_text,
                 "tags": analysis.tags,
                 "highlight_phrases": analysis.highlight_phrases,
                 "metadata": analysis.metadata
             }
 
             # Validate record
-            required_fields = ["id", "has_reporting", "reporting_summary", "tags", "highlight_phrases", "metadata"]
+            required_fields = ["id", "has_reporting", "reporting_summary", "reporting_text", "tags", "highlight_phrases", "metadata"]
             if not validate_record(record, required_fields):
                 logger.error(f"Invalid record for {section_id}, skipping")
                 failed_analyses += 1
@@ -243,6 +256,16 @@ def main():
             if record["has_reporting"]:
                 sections_with_reporting += 1
                 all_tags.extend(record["tags"])
+
+                # Log sample to console with colors
+                GREEN = '\033[92m'
+                CYAN = '\033[96m'
+                RESET = '\033[0m'
+                logger.info(f"\n{GREEN}📋 REPORTING REQUIREMENT FOUND:{RESET}")
+                logger.info(f"  {CYAN}Section:{RESET} {section_id}")
+                logger.info(f"  {CYAN}Summary:{RESET} {record['reporting_summary']}")
+                logger.info(f"  {CYAN}Tags:{RESET} {', '.join(record['tags']) if record['tags'] else 'none'}")
+                logger.info(f"  {CYAN}Key Phrases:{RESET} {'; '.join(record['highlight_phrases'][:3]) if record['highlight_phrases'] else 'none'}")
 
             # Save checkpoint every 5 sections
             if sections_processed % 5 == 0:
@@ -267,6 +290,10 @@ def main():
 
     logger.info(f"  Most common tags: {tag_counts.most_common(10)}")
     logger.info(f"  Output: {output_file}")
+
+    # Print detailed LLM usage statistics
+    stats_summary = client.get_stats_summary()
+    print(stats_summary)
 
     return 0
 
