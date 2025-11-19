@@ -64,39 +64,55 @@ export default function StructureNavigator({ className = '' }: StructureNavigato
     // Determine if this is a clickable section or just a container
     const isSection = node.level !== 'title' && node.level !== 'chapter' && node.level !== 'subchapter';
 
-    return (
-      <div key={node.id} className="select-none">
-        <div
-          className="flex items-start py-1.5 px-2 hover:bg-slate-50 rounded-sm cursor-pointer group transition-colors"
-          style={{ paddingLeft }}
-          onClick={() => hasChildren && toggleExpanded(node.id)}
-        >
-          {hasChildren && (
-            <span className="flex-shrink-0 mt-0.5 mr-1 text-slate-400">
-              {isExpanded ? (
-                <ChevronDown size={16} />
-              ) : (
-                <ChevronRight size={16} />
-              )}
-            </span>
-          )}
-          {!hasChildren && <span className="w-5 flex-shrink-0" />}
+    const content = (
+      <>
+        {hasChildren && (
+          <span className="flex-shrink-0 mt-0.5 mr-1 text-slate-400">
+            {isExpanded ? (
+              <ChevronDown size={16} />
+            ) : (
+              <ChevronRight size={16} />
+            )}
+          </span>
+        )}
+        {!hasChildren && <span className="w-5 flex-shrink-0" />}
 
-          <div className="flex-1 min-w-0">
-            <div className="flex items-baseline gap-2">
-              <span className={`font-medium text-sm ${
-                node.level === 'title' ? 'text-teal-700' :
-                node.level === 'chapter' ? 'text-slate-700' :
-                'text-slate-600'
-              }`}>
-                {node.label}
-              </span>
-              <span className="text-sm text-slate-500 truncate">
-                {node.heading}
-              </span>
-            </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2">
+            <span className={`font-medium text-sm ${
+              node.level === 'title' ? 'text-teal-700' :
+              node.level === 'chapter' ? 'text-slate-700' :
+              'text-slate-600'
+            }`}>
+              {node.label}
+            </span>
+            <span className="text-sm text-slate-500 truncate">
+              {node.heading}
+            </span>
           </div>
         </div>
+      </>
+    );
+
+    return (
+      <div key={node.id} className="select-none">
+        {isSection ? (
+          <Link
+            href={`/section/${node.id}`}
+            className="flex items-start py-1.5 px-2 hover:bg-teal-50 rounded-sm group transition-colors"
+            style={{ paddingLeft }}
+          >
+            {content}
+          </Link>
+        ) : (
+          <div
+            className="flex items-start py-1.5 px-2 hover:bg-slate-50 rounded-sm cursor-pointer group transition-colors"
+            style={{ paddingLeft }}
+            onClick={() => hasChildren && toggleExpanded(node.id)}
+          >
+            {content}
+          </div>
+        )}
 
         {hasChildren && isExpanded && (
           <div>

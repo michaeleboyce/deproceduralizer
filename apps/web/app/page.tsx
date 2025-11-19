@@ -21,6 +21,12 @@ export default function HomePage() {
       <header className="border-b border-slate-200/50 bg-white/80 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-end gap-6">
           <Link
+            href="/browse"
+            className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
+          >
+            Browse →
+          </Link>
+          <Link
             href="/reporting"
             className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
           >
