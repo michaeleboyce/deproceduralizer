@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 
 from common import NDJSONReader, NDJSONWriter, setup_logging, validate_record, PIPELINE_VERSION
-from llm_client import LLMClient
+from llm_factory import create_llm_client, add_cascade_argument
 from models import ReportingRequirement
 
 logger = setup_logging(__name__)
@@ -37,7 +37,7 @@ CHECKPOINT_FILE = Path("data/interim/reporting.ckpt")
 MAX_TEXT_LENGTH = 3000  # Truncate text to avoid token limits
 
 
-def get_llm_analysis(text: str, section_id: str, client: LLMClient) -> tuple[ReportingRequirement, str]:
+def get_llm_analysis(text: str, section_id: str, client) -> tuple[ReportingRequirement, str]:
     """
     Analyze section using unified LLM client with structured outputs.
 
@@ -146,7 +146,7 @@ def save_checkpoint(checkpoint: dict):
     logger.debug(f"Saved checkpoint: {len(checkpoint['processed_ids'])} sections processed")
 
 
-def process_section(section: dict, client: LLMClient) -> tuple[dict | None, str, list]:
+def process_section(section: dict, client) -> tuple[dict | None, str, list]:
     """
     Process a single section and return the result.
 
@@ -208,13 +208,9 @@ def main():
         type=int,
         help="Limit number of sections to process (for testing)"
     )
-    parser.add_argument(
-        "--cascade-strategy",
-        dest="cascade_strategy",
-        choices=["simple", "extended"],
-        default="extended",
-        help="LLM cascade strategy: 'simple' (Gemini→Ollama) or 'extended' (Gemini→Groq→Ollama). Defaults to 'extended'."
-    )
+
+    # Add cascade strategy argument using factory helper
+    add_cascade_argument(parser)
 
     args = parser.parse_args()
 
@@ -231,8 +227,8 @@ def main():
     # Load checkpoint
     checkpoint = load_checkpoint()
 
-    # Initialize LLM client with extended cascade strategy for reporting detection
-    client = LLMClient(cascade_strategy=args.cascade_strategy)
+    # Initialize LLM client using factory (supports both rate_limited and error_driven strategies)
+    client = create_llm_client(strategy=args.cascade_strategy)
 
     # Statistics
     sections_processed = 0

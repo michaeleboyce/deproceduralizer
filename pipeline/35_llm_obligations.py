@@ -27,7 +27,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 
 from common import NDJSONReader, NDJSONWriter, setup_logging, validate_record, PIPELINE_VERSION
-from llm_client import LLMClient
+from llm_factory import create_llm_client, add_cascade_argument
 from models import Obligation, ObligationsList
 
 logger = setup_logging(__name__)
@@ -67,7 +67,7 @@ def has_obligation_keywords(text: str) -> bool:
 def classify_obligation(
     text: str,
     section_id: str,
-    client: LLMClient
+    client
 ) -> tuple[List[Obligation], bool]:
     """
     Stage 2: LLM classification of obligation type and extraction.
@@ -263,6 +263,9 @@ def main():
         help="Enable parallel execution of models within tiers (faster but uses more API quota)"
     )
 
+    # Add cascade strategy argument
+    add_cascade_argument(parser)
+
     args = parser.parse_args()
 
     input_file = Path(args.input_file)
@@ -281,8 +284,9 @@ def main():
     # Load checkpoint
     checkpoint = load_checkpoint()
 
-    # Initialize LLM client
-    client = LLMClient(parallel_execution=args.parallel)
+    # Initialize LLM client using factory
+    # Note: parallel_execution is only supported with rate_limited strategy
+    client = create_llm_client(strategy=args.cascade_strategy, parallel_execution=args.parallel)
 
     # Statistics
     sections_processed = 0

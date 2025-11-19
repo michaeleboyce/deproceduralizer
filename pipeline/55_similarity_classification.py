@@ -15,11 +15,14 @@ Usage:
 """
 
 import argparse
+import os
 import pickle
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
 from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
 import torch
 from sentence_transformers import CrossEncoder
@@ -29,6 +32,9 @@ from llm_client import LLMClient
 from models import SimilarityClassification
 
 logger = setup_logging(__name__)
+
+# Get number of workers from environment (default to 1 for serial execution)
+WORKERS = int(os.getenv("PIPELINE_WORKERS", "1"))
 
 CHECKPOINT_FILE = Path("data/interim/similarity_classification.ckpt")
 MAX_TEXT_LENGTH = 2000  # Truncate each section text
@@ -229,6 +235,97 @@ def save_checkpoint(checkpoint: dict):
     logger.debug(f"Saved checkpoint: {len(checkpoint['processed_pairs'])} pairs processed")
 
 
+def process_pair(
+    pair: dict,
+    sections: Dict[str, str],
+    client: LLMClient
+) -> tuple[dict | None, str, dict | None]:
+    """
+    Process a single similarity pair and return the result.
+
+    Args:
+        pair: Dict with "section_a", "section_b", "similarity" keys
+        sections: Dict mapping section_id -> text_plain
+        client: LLMClient instance
+
+    Returns:
+        (record_dict or None, model_used, triage_result or None)
+    """
+    section_a = pair["section_a"]
+    section_b = pair["section_b"]
+    similarity = pair["similarity"]
+
+    # Get section texts
+    text_a = sections.get(section_a)
+    text_b = sections.get(section_b)
+
+    if not text_a or not text_b:
+        logger.warning(f"Missing text for {section_a} or {section_b}, skipping")
+        return None, "missing_text", None
+
+    # STEP 1: FAST PASS - Cross-Encoder Triage (Model Cascading)
+    triage = get_triage_classification(text_a, text_b)
+
+    # STEP 2: FILTER - If neutral (just "related") with high confidence, skip LLM
+    if triage and triage["label"] == "neutral" and triage["score"] > 0.5:
+        logger.debug(f"Triage: {section_a}-{section_b} → neutral ({triage['score']:.2f}), skipping LLM")
+
+        # Create "related" classification automatically
+        record = {
+            "section_a": section_a,
+            "section_b": section_b,
+            "similarity": similarity,
+            "classification": "related",
+            "explanation": f"Automated logic check deemed these sections related but not conflicting (Confidence: {triage['score']:.2f}). No duplicate, superseded, or conflicting relationship detected.",
+            "model_used": "cross-encoder-xsmall",
+            "analyzed_at": datetime.utcnow().isoformat() + "Z",
+            "cross_encoder_label": triage["label"],
+            "cross_encoder_score": triage["score"]
+        }
+
+        return record, "cross-encoder-xsmall", triage
+
+    # STEP 3: GRADUATE - Entailment/Contradiction flagged → send to LLM for verification
+    if triage and triage["label"] in ["entailment", "contradiction"]:
+        logger.debug(f"Triage: {section_a}-{section_b} → {triage['label']} ({triage['score']:.2f}), graduating to LLM")
+
+    # Classify with LLM using structured outputs (with triage context if available)
+    result, model_used = classify_similarity(
+        text_a, text_b, section_a, section_b, similarity, client,
+        triage_context=triage
+    )
+
+    if result is None:
+        return None, "failed", triage
+
+    # Convert Pydantic model to dict for output
+    record = {
+        "section_a": result.section_a,
+        "section_b": result.section_b,
+        "similarity": result.similarity,
+        "classification": result.classification,
+        "explanation": result.explanation,
+        "model_used": result.model_used,
+        "analyzed_at": result.analyzed_at,
+        "metadata": result.metadata or {"pipeline_version": PIPELINE_VERSION}
+    }
+
+    # Add cross-encoder triage metadata if available
+    if result.cross_encoder_label:
+        record["cross_encoder_label"] = result.cross_encoder_label
+    if result.cross_encoder_score is not None:
+        record["cross_encoder_score"] = result.cross_encoder_score
+
+    # Validate record
+    required_fields = ["section_a", "section_b", "similarity", "classification",
+                     "explanation", "model_used", "analyzed_at"]
+    if not validate_record(record, required_fields):
+        logger.error(f"Invalid record for {section_a}-{section_b}, skipping")
+        return None, "failed", triage
+
+    return record, model_used, triage
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Classify similarity relationships using LLM analysis"
@@ -255,6 +352,11 @@ def main():
         default="extended",
         help="LLM cascade strategy: 'simple' (Gemini→Ollama) or 'extended' (Gemini→Groq→Ollama). Defaults to 'extended'."
     )
+    parser.add_argument(
+        "--parallel",
+        action="store_true",
+        help="Enable parallel execution of models within tiers (faster but uses more API quota)"
+    )
 
     args = parser.parse_args()
 
@@ -272,6 +374,8 @@ def main():
 
     logger.info(f"Classifying similarities from {similarities_file}")
     logger.info(f"Pipeline version: {PIPELINE_VERSION}")
+    if args.parallel:
+        logger.info(f"⚡ Parallel execution enabled")
 
     # Load sections into memory
     sections = load_sections(sections_file)
@@ -280,7 +384,7 @@ def main():
     checkpoint = load_checkpoint()
 
     # Initialize LLM client with extended cascade strategy for similarity classification
-    client = LLMClient(cascade_strategy=args.cascade_strategy)
+    client = LLMClient(cascade_strategy=args.cascade_strategy, parallel_execution=args.parallel)
 
     # Statistics
     pairs_processed = 0
@@ -313,132 +417,143 @@ def main():
     logger.info(f"Found {total_pairs} similarity pairs to classify")
     if total_pairs > 0:
         logger.info(f"Processing most similar first (range: {pairs_to_process[0]['similarity']:.3f} to {pairs_to_process[-1]['similarity']:.3f})")
+    logger.info(f"Using {WORKERS} worker(s) for parallel processing")
+
+    # Filter out already processed pairs
+    pairs_to_process = [p for p in pairs_to_process if (p["section_a"], p["section_b"]) not in checkpoint["processed_pairs"]]
+    logger.info(f"{len(pairs_to_process)} pairs remaining to process")
+
+    # Thread-safe checkpoint updates
+    checkpoint_lock = Lock()
 
     # Process pairs with progress bar
     with NDJSONWriter(str(output_file)) as writer:
-        for pair in tqdm(pairs_to_process, desc="Classifying pairs", unit="pair"):
-            section_a = pair["section_a"]
-            section_b = pair["section_b"]
-            similarity = pair["similarity"]
+        if WORKERS == 1:
+            # Serial execution (original behavior)
+            for pair in tqdm(pairs_to_process, desc="Classifying pairs", unit="pair"):
+                section_a = pair["section_a"]
+                section_b = pair["section_b"]
+                similarity = pair["similarity"]
+                pair_key = (section_a, section_b)
 
-            pair_key = (section_a, section_b)
+                record, model_used, triage = process_pair(pair, sections, client)
 
-            # Skip if already processed
-            if pair_key in checkpoint["processed_pairs"]:
-                logger.debug(f"Skipping already processed pair: {section_a}-{section_b}")
-                continue
+                if record is None:
+                    if model_used != "missing_text":
+                        failed_classifications += 1
+                    with checkpoint_lock:
+                        checkpoint["processed_pairs"].add(pair_key)
+                    continue
 
-            # Get section texts
-            text_a = sections.get(section_a)
-            text_b = sections.get(section_b)
+                # Track triage statistics
+                if model_used == "cross-encoder-xsmall":
+                    triage_skipped += 1
+                elif triage and triage["label"] in ["entailment", "contradiction"]:
+                    triage_graduated += 1
 
-            if not text_a or not text_b:
-                logger.warning(f"Missing text for {section_a} or {section_b}, skipping")
-                checkpoint["processed_pairs"].add(pair_key)
-                continue
+                # Track model usage
+                if model_used != "failed":
+                    with checkpoint_lock:
+                        checkpoint["model_usage"][model_used] = checkpoint["model_usage"].get(model_used, 0) + 1
 
-            # STEP 1: FAST PASS - Cross-Encoder Triage (Model Cascading)
-            triage = get_triage_classification(text_a, text_b)
-
-            # STEP 2: FILTER - If neutral (just "related") with high confidence, skip LLM
-            if triage and triage["label"] == "neutral" and triage["score"] > 0.5:
-                logger.debug(f"Triage: {section_a}-{section_b} → neutral ({triage['score']:.2f}), skipping LLM")
-
-                # Create "related" classification automatically
-                record = {
-                    "section_a": section_a,
-                    "section_b": section_b,
-                    "similarity": similarity,
-                    "classification": "related",
-                    "explanation": f"Automated logic check deemed these sections related but not conflicting (Confidence: {triage['score']:.2f}). No duplicate, superseded, or conflicting relationship detected.",
-                    "model_used": "cross-encoder-xsmall",
-                    "analyzed_at": datetime.utcnow().isoformat() + "Z",
-                    "cross_encoder_label": triage["label"],
-                    "cross_encoder_score": triage["score"]
-                }
-
+                # Write record
                 writer.write(record)
-                checkpoint["processed_pairs"].add(pair_key)
+
+                # Update checkpoint
+                with checkpoint_lock:
+                    checkpoint["processed_pairs"].add(pair_key)
+                    checkpoint["results"].append(record)
                 pairs_processed += 1
-                triage_skipped += 1
+
+                # Log sample to console every 10th pair with colors
+                if pairs_processed % 10 == 0:
+                    BLUE = '\033[94m'
+                    CYAN = '\033[96m'
+                    YELLOW = '\033[93m'
+                    RESET = '\033[0m'
+                    logger.info(f"\n{BLUE}🔗 SIMILARITY CLASSIFICATION SAMPLE:{RESET}")
+                    logger.info(f"  {CYAN}Pair:{RESET} {section_a} ↔ {section_b}")
+                    logger.info(f"  {CYAN}Similarity:{RESET} {similarity:.3f}")
+                    logger.info(f"  {CYAN}Classification:{RESET} {YELLOW}{record['classification']}{RESET}")
+                    logger.info(f"  {CYAN}Explanation:{RESET} {record['explanation'][:150]}..." if len(record['explanation']) > 150 else f"  {CYAN}Explanation:{RESET} {record['explanation']}")
+                    logger.info(f"  {CYAN}Model:{RESET} {model_used}")
 
                 # Save checkpoint every 10 pairs
                 if pairs_processed % 10 == 0:
-                    save_checkpoint(checkpoint)
+                    with checkpoint_lock:
+                        save_checkpoint(checkpoint)
+        else:
+            # Parallel execution with ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=WORKERS) as executor:
+                # Submit all tasks
+                future_to_pair = {
+                    executor.submit(process_pair, pair, sections, client): pair
+                    for pair in pairs_to_process
+                }
 
-                continue  # <--- PERFORMANCE WIN: Skip expensive LLM call
+                # Process completed tasks with progress bar
+                for future in tqdm(as_completed(future_to_pair), total=len(pairs_to_process), desc="Classifying pairs", unit="pair"):
+                    pair = future_to_pair[future]
+                    section_a = pair["section_a"]
+                    section_b = pair["section_b"]
+                    similarity = pair["similarity"]
+                    pair_key = (section_a, section_b)
 
-            # STEP 3: GRADUATE - Entailment/Contradiction flagged → send to LLM for verification
-            if triage and triage["label"] in ["entailment", "contradiction"]:
-                logger.debug(f"Triage: {section_a}-{section_b} → {triage['label']} ({triage['score']:.2f}), graduating to LLM")
-                triage_graduated += 1
+                    try:
+                        record, model_used, triage = future.result()
 
-            # Classify with LLM using structured outputs (with triage context if available)
-            result, model_used = classify_similarity(
-                text_a, text_b, section_a, section_b, similarity, client,
-                triage_context=triage
-            )
+                        if record is None:
+                            if model_used != "missing_text":
+                                failed_classifications += 1
+                            with checkpoint_lock:
+                                checkpoint["processed_pairs"].add(pair_key)
+                            continue
 
-            if result is None:
-                failed_classifications += 1
-                checkpoint["processed_pairs"].add(pair_key)
-                continue
+                        # Track triage statistics
+                        if model_used == "cross-encoder-xsmall":
+                            with checkpoint_lock:
+                                triage_skipped += 1
+                        elif triage and triage["label"] in ["entailment", "contradiction"]:
+                            with checkpoint_lock:
+                                triage_graduated += 1
 
-            # Track model usage
-            if model_used != "failed":
-                checkpoint["model_usage"][model_used] = checkpoint["model_usage"].get(model_used, 0) + 1
+                        # Track model usage
+                        if model_used != "failed":
+                            with checkpoint_lock:
+                                checkpoint["model_usage"][model_used] = checkpoint["model_usage"].get(model_used, 0) + 1
 
-            # Convert Pydantic model to dict for output
-            record = {
-                "section_a": result.section_a,
-                "section_b": result.section_b,
-                "similarity": result.similarity,
-                "classification": result.classification,
-                "explanation": result.explanation,
-                "model_used": result.model_used,
-                "analyzed_at": result.analyzed_at,
-                "metadata": result.metadata or {"pipeline_version": PIPELINE_VERSION}
-            }
+                        # Write record (writer is thread-safe)
+                        writer.write(record)
 
-            # Add cross-encoder triage metadata if available
-            if result.cross_encoder_label:
-                record["cross_encoder_label"] = result.cross_encoder_label
-            if result.cross_encoder_score is not None:
-                record["cross_encoder_score"] = result.cross_encoder_score
+                        # Update checkpoint
+                        with checkpoint_lock:
+                            checkpoint["processed_pairs"].add(pair_key)
+                            checkpoint["results"].append(record)
+                        pairs_processed += 1
 
-            # Validate record
-            required_fields = ["section_a", "section_b", "similarity", "classification",
-                             "explanation", "model_used", "analyzed_at"]
-            if not validate_record(record, required_fields):
-                logger.error(f"Invalid record for {section_a}-{section_b}, skipping")
-                failed_classifications += 1
-                checkpoint["processed_pairs"].add(pair_key)
-                continue
+                        # Log sample to console every 10th pair with colors
+                        if pairs_processed % 10 == 0:
+                            BLUE = '\033[94m'
+                            CYAN = '\033[96m'
+                            YELLOW = '\033[93m'
+                            RESET = '\033[0m'
+                            logger.info(f"\n{BLUE}🔗 SIMILARITY CLASSIFICATION SAMPLE:{RESET}")
+                            logger.info(f"  {CYAN}Pair:{RESET} {section_a} ↔ {section_b}")
+                            logger.info(f"  {CYAN}Similarity:{RESET} {similarity:.3f}")
+                            logger.info(f"  {CYAN}Classification:{RESET} {YELLOW}{record['classification']}{RESET}")
+                            logger.info(f"  {CYAN}Explanation:{RESET} {record['explanation'][:150]}..." if len(record['explanation']) > 150 else f"  {CYAN}Explanation:{RESET} {record['explanation']}")
+                            logger.info(f"  {CYAN}Model:{RESET} {model_used}")
 
-            # Write record
-            writer.write(record)
+                        # Save checkpoint every 10 pairs
+                        if pairs_processed % 10 == 0:
+                            with checkpoint_lock:
+                                save_checkpoint(checkpoint)
 
-            # Update checkpoint
-            checkpoint["processed_pairs"].add(pair_key)
-            checkpoint["results"].append(record)
-            pairs_processed += 1
-
-            # Log sample to console every 10th pair with colors
-            if pairs_processed % 10 == 0:
-                BLUE = '\033[94m'
-                CYAN = '\033[96m'
-                YELLOW = '\033[93m'
-                RESET = '\033[0m'
-                logger.info(f"\n{BLUE}🔗 SIMILARITY CLASSIFICATION SAMPLE:{RESET}")
-                logger.info(f"  {CYAN}Pair:{RESET} {section_a} ↔ {section_b}")
-                logger.info(f"  {CYAN}Similarity:{RESET} {similarity:.3f}")
-                logger.info(f"  {CYAN}Classification:{RESET} {YELLOW}{record['classification']}{RESET}")
-                logger.info(f"  {CYAN}Explanation:{RESET} {record['explanation'][:150]}..." if len(record['explanation']) > 150 else f"  {CYAN}Explanation:{RESET} {record['explanation']}")
-                logger.info(f"  {CYAN}Model:{RESET} {model_used}")
-
-            # Save checkpoint every 10 pairs
-            if pairs_processed % 10 == 0:
-                save_checkpoint(checkpoint)
+                    except Exception as e:
+                        logger.error(f"Error processing {section_a}-{section_b}: {e}")
+                        failed_classifications += 1
+                        with checkpoint_lock:
+                            checkpoint["processed_pairs"].add(pair_key)
 
     # Final checkpoint save
     save_checkpoint(checkpoint)
