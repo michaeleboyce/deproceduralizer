@@ -104,8 +104,8 @@ export default function StructureNavigator({ className = '' }: StructureNavigato
           {isSection && (
             <Link
               href={`/section/${node.id}`}
-              className="flex-shrink-0 ml-2 px-2 py-0.5 text-xs font-medium text-teal-700
-                         hover:bg-teal-100 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+              className="flex-shrink-0 ml-2 px-2 py-0.5 text-xs font-medium text-slate-500
+                         hover:text-slate-700 hover:bg-slate-100 rounded opacity-0 group-hover:opacity-100 transition-all"
               onClick={(e) => e.stopPropagation()}
             >
               View →
