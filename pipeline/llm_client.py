@@ -68,7 +68,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 # Cascade strategy configuration
-CASCADE_STRATEGY = os.getenv("LLM_CASCADE_STRATEGY", "simple")  # "simple" or "extended"
+CASCADE_STRATEGY = os.getenv("LLM_CASCADE_STRATEGY", "extended")  # "simple" or "extended"
 
 # Model configurations with rate limits (RPM, RPD, TPM)
 # Ordered by model version: 2.5 Flash → 2.5 Flash-Lite → 2.0 Flash → 2.0 Flash-Lite
