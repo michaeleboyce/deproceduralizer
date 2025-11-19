@@ -86,6 +86,17 @@ All loaders expect the following environment variables:
 
 ## Recent Fixes
 
+### 2025-11-19: Anachronisms State File Collision
+- **Issue**: Anachronisms loader used hardcoded state file path
+  - Path: `data/interim/load_anachronisms_dc.state` (not corpus-specific)
+  - When loading different corpus sizes, byte offsets would be wrong
+  - Would skip/misread records when switching between small/medium/large
+- **Fix**:
+  - Added `--state-file` argument to loader (like other loaders)
+  - Now uses default: `input_file.with_suffix('.state')` (corpus-specific)
+  - Example: `anachronisms_small.state`, `anachronisms_medium.state`
+- **Status**: ✅ Fixed - Safe to load different corpus sizes without cleaning
+
 ### 2025-11-19: Anachronisms Schema Mismatch
 - **Issue**: Table schema didn't match pipeline data format
   - Table had: `description`, `suggestion`

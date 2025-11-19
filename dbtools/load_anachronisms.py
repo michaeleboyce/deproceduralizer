@@ -239,6 +239,11 @@ def main():
         default="dc",
         help="Jurisdiction code (default: dc)"
     )
+    parser.add_argument(
+        "--state-file",
+        type=Path,
+        help="Path to state file (default: input_file.state)"
+    )
 
     args = parser.parse_args()
 
@@ -258,7 +263,7 @@ def main():
         database_url=database_url,
         input_file=str(input_file),
         jurisdiction=args.jurisdiction,
-        state_file=f"data/interim/load_anachronisms_{args.jurisdiction}.state"
+        state_file=args.state_file  # Uses input_file.state by default (corpus-specific)
     )
 
     loader.run()
