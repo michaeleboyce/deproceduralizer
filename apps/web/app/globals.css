@@ -2,15 +2,29 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #1e293b; /* slate-800 for better readability */
+  --foreground: #1e293b;
+  /* slate-800 */
+  --primary: #0f766e;
+  /* teal-700 */
+  --secondary: #475569;
+  /* slate-600 */
+  --accent: #f59e0b;
+  /* amber-500 */
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  /* System font stack for optimal cross-platform rendering */
-  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  /* Professional Font Stack */
+  /* Sans-serif for UI: Inter (fallback to system) */
+  --font-sans: var(--font-inter), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* Serif for Legal Text: Merriweather or Georgia (fallback to serif) */
+  --font-serif: var(--font-merriweather), 'Georgia', 'Cambria', "Times New Roman", Times, serif;
+
+  /* Monospace for Citations: JetBrains Mono or SF Mono */
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -23,8 +37,55 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  /* Modern system font stack for professional, readable typography */
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Typography Utilities */
+.font-serif {
+  font-family: var(--font-serif);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+/* Prose Overrides for Legal Text */
+.prose {
+  font-family: var(--font-serif);
+  line-height: 1.8;
+  /* Improved readability for dense text */
+}
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4 {
+  font-family: var(--font-sans);
+  letter-spacing: -0.02em;
+}
+
+/* Smooth Scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }

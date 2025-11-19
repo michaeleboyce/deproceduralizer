@@ -30,6 +30,7 @@ export const sections = pgTable("sections", {
   // Analysis fields
   hasReporting: boolean("has_reporting").default(false),
   reportingSummary: text("reporting_summary"),
+  reportingText: text("reporting_text"),
   reportingTags: jsonb("reporting_tags").default(sql`'[]'::jsonb`),
 
   // Metadata

@@ -18,6 +18,12 @@ import SimilarSectionsList from "@/components/SimilarSectionsList";
 import { highlightPhrases } from "@/lib/highlight";
 import Navigation from "@/components/Navigation";
 import MobileTableOfContents from "@/components/MobileTableOfContents";
+import parse, { DOMNode, Element } from 'html-react-parser';
+import { parseCitations } from "@/lib/citation";
+import { CitationLink } from "@/components/CitationLink";
+import CitationGraph from "@/components/CitationGraph";
+import CollapsibleSection from "@/components/CollapsibleSection";
+import SubsectionParser from "@/components/SubsectionParser";
 
 interface Deadline {
   phrase: string;
@@ -266,6 +272,7 @@ export default async function SectionPage({
   const tocItems = [
     { id: "section-text", label: "Section Text" },
     similarSections.length > 0 && { id: "similar-sections", label: "Similar Sections" },
+    { id: "citation-graph", label: "Citation Network" },
     enhancedObligations.length > 0 && { id: "extracted-obligations", label: "Extracted Obligations" },
     hasObligations && { id: "obligations-references", label: "Obligations & References" },
   ].filter(Boolean) as { id: string; label: string }[];
@@ -397,6 +404,16 @@ export default async function SectionPage({
                   {section.reportingSummary}
                 </p>
               )}
+              {section.reportingText && (
+                <div className="mt-4 pt-4 border-t border-violet-200">
+                  <h4 className="text-sm font-semibold text-violet-900 mb-2">
+                    Exact Reporting Text:
+                  </h4>
+                  <div className="text-sm text-slate-700 bg-white/50 rounded p-3 italic border-l-4 border-violet-400">
+                    &ldquo;{section.reportingText}&rdquo;
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -405,10 +422,7 @@ export default async function SectionPage({
             <h2 className="text-xl font-semibold text-slate-900 mb-4">
               Section Text
             </h2>
-            <div
-              className="prose prose-sm max-w-none text-slate-700 leading-relaxed"
-              dangerouslySetInnerHTML={{ __html: highlightedHtml }}
-            />
+            <SubsectionParser htmlContent={highlightedHtml} />
           </div>
 
           {/* Similar Sections */}
@@ -421,6 +435,18 @@ export default async function SectionPage({
               />
             </div>
           )}
+
+          {/* Citation Graph */}
+          {/* Citation Graph */}
+          <div id="citation-graph" className="scroll-mt-20 mb-6">
+            <CollapsibleSection 
+              title="Citation Network" 
+              description="Visualizing references to and from this section."
+              defaultOpen={false}
+            >
+              <CitationGraph sectionId={id} />
+            </CollapsibleSection>
+          </div>
 
           {/* Enhanced Obligations */}
           {enhancedObligations.length > 0 && (

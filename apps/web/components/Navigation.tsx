@@ -24,6 +24,8 @@ export default function Navigation({ breadcrumbs }: NavigationProps) {
       crumbs.push({ label: "Search" });
     } else if (pathname === "/reporting") {
       crumbs.push({ label: "Reporting Requirements" });
+    } else if (pathname === "/browse") {
+      crumbs.push({ label: "Browse" });
     } else if (pathname.startsWith("/section/")) {
       crumbs.push({ label: "Search", href: "/search" });
       crumbs.push({ label: "Section Detail" });
@@ -61,6 +63,16 @@ export default function Navigation({ breadcrumbs }: NavigationProps) {
                 Search
               </Link>
               <Link
+                href="/browse"
+                className={`font-medium transition-colors ${
+                  pathname === "/browse"
+                    ? "text-teal-700"
+                    : "text-slate-700 hover:text-slate-900"
+                }`}
+              >
+                Browse
+              </Link>
+              <Link
                 href="/reporting"
                 className={`font-medium transition-colors ${
                   pathname === "/reporting"
@@ -69,6 +81,16 @@ export default function Navigation({ breadcrumbs }: NavigationProps) {
                 }`}
               >
                 Reporting
+              </Link>
+              <Link
+                href="/dashboard/conflicts"
+                className={`font-medium transition-colors ${
+                  pathname === "/dashboard/conflicts"
+                    ? "text-teal-700"
+                    : "text-slate-700 hover:text-slate-900"
+                }`}
+              >
+                Analysis
               </Link>
             </div>
           </div>
