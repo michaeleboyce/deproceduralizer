@@ -3,14 +3,15 @@
 Unified LLM client wrapper with dual cascade strategies.
 
 This module provides a single interface for calling LLMs with Pydantic validation:
-- Gemini API (primary, with per-model rate limiting and cascade)
-- Groq API (secondary, OpenAI-compatible, 9 models)
-- OpenRouter API (tertiary, OpenAI-compatible with 11 free tier models including DeepSeek R1, Qwen3 Coder 480B, Hermes 405B, Gemma 3, and more)
+- Vertex AI (primary, Google's enterprise ML platform with higher rate limits)
+- Gemini API (secondary backup, standard Google AI API)
+- Groq API (tertiary, OpenAI-compatible, 9 models)
+- OpenRouter API (quaternary, OpenAI-compatible with 11 free tier models including DeepSeek R1, Qwen3 Coder 480B, Hermes 405B, Gemma 3, and more)
 - Ollama (final fallback, local)
 
 Cascade Strategies:
-- "simple" (default): Gemini → Ollama (preserves Groq/OpenRouter rate limits)
-- "extended": Gemini → Groq (9 models) → OpenRouter (11 free models, max 2 concurrent) → Ollama (maximum resilience)
+- "simple": Vertex → Gemini → Ollama (preserves Groq/OpenRouter rate limits)
+- "extended": Vertex → Gemini → Groq (9 models) → OpenRouter (11 free models, max 2 concurrent) → Ollama (maximum resilience)
 
 Key features:
 - Automatic validation and retry via Pydantic
@@ -67,6 +68,7 @@ logger = setup_logging(__name__)
 T = TypeVar('T', bound=BaseModel)
 
 # API Configuration
+VERTEX_API_KEY = os.getenv("VERTEX_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -79,6 +81,15 @@ PARALLEL_EXECUTION = os.getenv("LLM_PARALLEL_EXECUTION", "false").lower() == "tr
 _OLLAMA_LOCK = Lock()
 
 # Model configurations with rate limits (RPM, RPD, TPM)
+# Vertex AI models (primary tier) - potentially higher limits than standard Gemini API
+VERTEX_MODELS = [
+    {"name": "gemini-2.5-flash", "rpm": 15, "rpd": 1000},  # Higher limits with Vertex
+    {"name": "gemini-2.5-flash-lite", "rpm": 20, "rpd": 1500},
+    {"name": "gemini-2.0-flash", "rpm": 20, "rpd": 500},
+    {"name": "gemini-2.0-flash-lite", "rpm": 40, "rpd": 500},
+]
+
+# Standard Gemini API models (backup tier)
 # Ordered by model version: 2.5 Flash → 2.5 Flash-Lite → 2.0 Flash → 2.0 Flash-Lite
 GEMINI_MODELS = [
     {"name": "gemini-2.5-flash", "rpm": 10, "rpd": 250},
@@ -363,21 +374,25 @@ class LLMClient:
         prompt: str,
         response_model: Type[T],
         model_name: str,
-        max_retries: int = 3
+        max_retries: int = 3,
+        api_key: Optional[str] = None
     ) -> Optional[T]:
         """
-        Call Gemini API with Instructor for validated responses.
+        Call Gemini/Vertex API with Instructor for validated responses.
 
         Args:
             prompt: The prompt to send to the LLM
             response_model: Pydantic model class for validation
             model_name: Gemini model name
             max_retries: Number of validation retries
+            api_key: API key to use (defaults to GEMINI_API_KEY if not provided)
 
         Returns:
             Validated Pydantic model instance or None if failed
         """
-        if not GEMINI_API_KEY:
+        # Use provided API key or fall back to GEMINI_API_KEY
+        key = api_key if api_key is not None else GEMINI_API_KEY
+        if not key:
             return None
 
         try:
@@ -420,7 +435,7 @@ Return only the JSON object, nothing else."""
             # Retry loop for validation errors
             for attempt in range(max_retries):
                 response = requests.post(
-                    f"{gemini_api_url}?key={GEMINI_API_KEY}",
+                    f"{gemini_api_url}?key={key}",
                     headers=headers,
                     json=payload,
                     timeout=30
@@ -840,7 +855,7 @@ Return only the JSON object, nothing else."""
         model_config: dict,
         prompt: str,
         response_model: Type[T],
-        tier: str  # "gemini", "groq", or "openrouter"
+        tier: str  # "vertex", "gemini", "groq", or "openrouter"
     ) -> tuple[Optional[T], str]:
         """
         Try a single model and return (result, model_name) or (None, model_name).
@@ -863,7 +878,9 @@ Return only the JSON object, nothing else."""
             return (None, model_name)
 
         # Call the appropriate API
-        if tier == "gemini":
+        if tier == "vertex":
+            result = self._call_gemini_with_instructor(prompt, response_model, model_name, api_key=VERTEX_API_KEY)
+        elif tier == "gemini":
             result = self._call_gemini_with_instructor(prompt, response_model, model_name)
         elif tier == "groq":
             result = self._call_groq_with_instructor(prompt, response_model, model_name)
@@ -984,17 +1001,87 @@ Return only the JSON object, nothing else."""
             using_openrouter_fallback = False
             in_sticky_session = False
 
-        # If we're using fallback and it's been 3+ minutes, try Gemini again
-        should_retry_gemini = (
+        # If we're using fallback and it's been 3+ minutes, try Vertex/Gemini again
+        should_retry_vertex = (
             (using_fallback or using_groq_fallback or using_openrouter_fallback) and
             (current_time - last_gemini_fail) >= GEMINI_RETRY_INTERVAL and
-            not in_sticky_session  # Don't retry Gemini if we're in sticky session
+            not in_sticky_session  # Don't retry if we're in sticky session
         )
 
-        # === TIER 1: Try Gemini models ===
+        # === TIER 1: Try Vertex AI models (Primary) ===
+        if VERTEX_API_KEY and (not using_fallback or should_retry_vertex) and not in_sticky_session:
+            if should_retry_vertex:
+                current_model = self.stats.get('current_model', 'unknown')
+                calls = self.stats.get('current_model_calls', 0)
+                time_on_current = current_time - self.stats.get('current_model_start_time', current_time)
+                minutes = int(time_on_current // 60)
+                seconds = int(time_on_current % 60)
+                logger.info(f"⟳ Retrying Vertex AI after {minutes}m {seconds}s on {current_model} ({calls} calls)")
+
+            # Add delay between Vertex calls to avoid rate limits
+            if self.stats.get('last_vertex_call_time', 0) > 0:
+                time_since_last = current_time - self.stats.get('last_vertex_call_time', 0)
+                if time_since_last < GEMINI_CALL_DELAY:
+                    time.sleep(GEMINI_CALL_DELAY - time_since_last)
+
+            self.stats['last_vertex_attempt_time'] = time.time()
+
+            if self.parallel_execution:
+                # Parallel execution for Vertex
+                result = self._try_tier_parallel(VERTEX_MODELS, prompt, response_model, "vertex", section_id)
+                if result:
+                    self.stats['last_vertex_call_time'] = time.time()
+                    # Successfully used Vertex, clear fallback state
+                    if using_fallback or using_groq_fallback or using_openrouter_fallback:
+                        logger.info("✓ Vertex AI is working again, resuming normal operation")
+                        self.stats['using_fallback'] = False
+                        self.stats['using_groq_fallback'] = False
+                        self.stats['using_openrouter_fallback'] = False
+                    return result
+            else:
+                # Sequential execution for Vertex
+                for model_config in VERTEX_MODELS:
+                    model_name = model_config["name"]
+
+                    # Check rate limits for this specific model
+                    if not self.rate_limiter.wait_if_needed(model_config):
+                        logger.debug(f"Vertex {model_name} rate limited, trying next model")
+                        continue
+
+                    # Log model switch if changing
+                    self._log_model_switch(f"vertex:{model_name}", "Rate limited" if self.stats['current_model'] else "Initial")
+
+                    self.stats['last_vertex_call_time'] = time.time()
+                    result = self._call_gemini_with_instructor(prompt, response_model, model_name, api_key=VERTEX_API_KEY)
+
+                    if result:
+                        self.rate_limiter.record_call(model_config)
+                        logger.debug(f"Successfully used Vertex {model_name}" + (f" for {section_id}" if section_id else ""))
+
+                        # Track call count
+                        self.stats['current_model_calls'] += 1
+                        vertex_model_name = f"vertex:{model_name}"
+                        self.stats['model_call_counts'][vertex_model_name] = self.stats['model_call_counts'].get(vertex_model_name, 0) + 1
+
+                        # Successfully used Vertex, clear fallback state
+                        if using_fallback or using_groq_fallback or using_openrouter_fallback:
+                            logger.info("✓ Vertex AI is working again, resuming normal operation")
+                            self.stats['using_fallback'] = False
+                            self.stats['using_groq_fallback'] = False
+                            self.stats['using_openrouter_fallback'] = False
+
+                        return LLMResponse(data=result, model_used=vertex_model_name)
+                    else:
+                        logger.debug(f"Failed with Vertex {model_name}, trying next model")
+
+        # Vertex tier exhausted, record failure time
+        self.stats['last_vertex_fail_time'] = current_time
+        self.stats['last_gemini_fail_time'] = current_time  # Also set this for retry logic
+
+        # === TIER 2: Try Gemini models (Backup) ===
         # Skip Gemini if we're in an active OpenRouter sticky session
-        if GEMINI_API_KEY and (not using_fallback or should_retry_gemini) and not in_sticky_session:
-            if should_retry_gemini:
+        if GEMINI_API_KEY and (not using_fallback or should_retry_vertex) and not in_sticky_session:
+            if should_retry_vertex:
                 current_model = self.stats.get('current_model', 'unknown')
                 calls = self.stats.get('current_model_calls', 0)
                 time_on_current = current_time - self.stats.get('current_model_start_time', current_time)
@@ -1058,7 +1145,7 @@ Return only the JSON object, nothing else."""
         # Gemini tier exhausted
         self.stats['last_gemini_fail_time'] = current_time
 
-        # === TIER 2: Try Groq models (extended strategy only) ===
+        # === TIER 3: Try Groq models (extended strategy only) ===
         # Skip Groq if we're in an active OpenRouter sticky session
         if self.cascade_strategy == "extended" and GROQ_API_KEY and not in_sticky_session:
             self.stats['last_groq_attempt_time'] = current_time
@@ -1108,7 +1195,7 @@ Return only the JSON object, nothing else."""
                         if i < len(GROQ_MODELS) - 1:  # Don't delay after the last model
                             time.sleep(0.5)
 
-        # === TIER 3: Try OpenRouter models (extended strategy only) ===
+        # === TIER 4: Try OpenRouter models (extended strategy only) ===
         if self.cascade_strategy == "extended" and OPENROUTER_API_KEY:
             self.stats['last_openrouter_attempt_time'] = current_time
 
@@ -1167,13 +1254,13 @@ Return only the JSON object, nothing else."""
                         if i < len(OPENROUTER_MODELS) - 1:  # Don't delay after the last model
                             time.sleep(0.5)
 
-        # === TIER 4: Fallback to Ollama ===
+        # === TIER 5: Fallback to Ollama ===
         if not self.stats.get('fallback_to_ollama_logged'):
             if self.cascade_strategy == "extended":
-                logger.info(f"⚠ All Gemini, Groq, and OpenRouter models exhausted, falling back to Ollama {OLLAMA_MODEL}")
+                logger.info(f"⚠ All Vertex, Gemini, Groq, and OpenRouter models exhausted, falling back to Ollama {OLLAMA_MODEL}")
             else:
-                logger.info(f"⚠ All Gemini models exhausted, falling back to Ollama {OLLAMA_MODEL}")
-            logger.info(f"  Will retry Gemini every {GEMINI_RETRY_INTERVAL}s")
+                logger.info(f"⚠ All Vertex and Gemini models exhausted, falling back to Ollama {OLLAMA_MODEL}")
+            logger.info(f"  Will retry Vertex/Gemini every {GEMINI_RETRY_INTERVAL}s")
             self.stats['fallback_to_ollama_logged'] = True
 
         self.stats['using_fallback'] = True
