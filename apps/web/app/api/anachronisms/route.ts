@@ -92,7 +92,7 @@ export async function GET(request: Request) {
               'recommendation', ai.recommendation,
               'explanation', ai.explanation,
               'matchedPhrases', (
-                SELECT json_agg(h.phrase)
+                SELECT json_agg(h.matched_phrase)
                 FROM section_anachronism_highlights h
                 WHERE h.indicator_id = ai.id
               )

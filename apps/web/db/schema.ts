@@ -224,7 +224,7 @@ export const anachronismIndicators = pgTable("anachronism_indicators", {
 export const sectionAnachronismHighlights = pgTable("section_anachronism_highlights", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   indicatorId: bigint("indicator_id", { mode: "number" }).notNull(),
-  phrase: text("phrase").notNull(),
+  phrase: text("matched_phrase").notNull(),
 }, (table) => ({
   indicatorIdx: index("idx_section_anachronism_highlights_indicator").on(table.indicatorId),
 }));
