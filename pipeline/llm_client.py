@@ -5,12 +5,12 @@ Unified LLM client wrapper with dual cascade strategies.
 This module provides a single interface for calling LLMs with Pydantic validation:
 - Gemini API (primary, with per-model rate limiting and cascade)
 - Groq API (secondary, OpenAI-compatible, 9 models)
-- OpenRouter API (tertiary, OpenAI-compatible with :floor routing for cheapest providers)
+- OpenRouter API (tertiary, OpenAI-compatible with free tier models: DeepSeek R1, DeepSeek V3, Llama 3.3 70B, Qwen3 235B, Qwen 2.5 72B)
 - Ollama (final fallback, local)
 
 Cascade Strategies:
 - "simple" (default): Gemini → Ollama (preserves Groq/OpenRouter rate limits)
-- "extended": Gemini → Groq (9 models) → OpenRouter (3 models with sticky sessions) → Ollama (maximum resilience)
+- "extended": Gemini → Groq (9 models) → OpenRouter (5 free models with sticky sessions) → Ollama (maximum resilience)
 
 Key features:
 - Automatic validation and retry via Pydantic
@@ -102,12 +102,14 @@ GROQ_MODELS = [
 ]
 
 # OpenRouter model configurations (OpenAI-compatible API with provider routing)
-# Using :floor suffix to prioritize cheapest providers
+# Using free tier models - strongest available at $0 cost
 # Conservative rate limits (can be adjusted based on OpenRouter's actual limits)
 OPENROUTER_MODELS = [
-    {"name": "gpt-4o-mini:floor", "rpm": 30, "rpd": 1000, "tpm": 10000},
-    {"name": "gpt-3.5-turbo:floor", "rpm": 30, "rpd": 1000, "tpm": 10000},
-    {"name": "claude-3-haiku:floor", "rpm": 30, "rpd": 1000, "tpm": 10000},
+    {"name": "deepseek/deepseek-r1:free", "rpm": 30, "rpd": 1000, "tpm": 163840},
+    {"name": "deepseek/deepseek-chat-v3-0324:free", "rpm": 30, "rpd": 1000, "tpm": 163840},
+    {"name": "meta-llama/llama-3.3-70b-instruct:free", "rpm": 30, "rpd": 1000, "tpm": 131072},
+    {"name": "qwen/qwen3-235b-a22b:free", "rpm": 30, "rpd": 1000, "tpm": 40960},
+    {"name": "qwen/qwen-2.5-72b-instruct:free", "rpm": 30, "rpd": 1000, "tpm": 32768},
 ]
 
 OLLAMA_HOST = "http://localhost:11434"
@@ -257,7 +259,7 @@ class LLMClient:
         # Log initialization
         strategy_desc = {
             'simple': 'Gemini (4) → Ollama (1)',
-            'extended': 'Gemini (4) → Groq (9) → OpenRouter (3 with sticky) → Ollama (1)'
+            'extended': 'Gemini (4) → Groq (9) → OpenRouter (5 free with sticky) → Ollama (1)'
         }
         logger.info(f"LLM Client initialized with '{self.cascade_strategy}' cascade strategy:")
         logger.info(f"  {strategy_desc[self.cascade_strategy]}")
