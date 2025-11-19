@@ -26,7 +26,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 
 from common import NDJSONReader, NDJSONWriter, setup_logging, validate_record, PIPELINE_VERSION
-from llm_client import LLMClient
+from llm_factory import create_llm_client, add_cascade_argument
 from models import AnachronismAnalysis
 
 logger = setup_logging(__name__)
@@ -300,12 +300,9 @@ def main():
         type=int,
         help="Limit number of sections to process (for testing)"
     )
-    parser.add_argument(
-        "--cascade-strategy",
-        choices=["simple", "extended"],
-        default="extended",
-        help="LLM cascade strategy (default: extended)"
-    )
+
+    # Add cascade strategy argument using factory helper
+    add_cascade_argument(parser)
 
     args = parser.parse_args()
 
@@ -345,8 +342,8 @@ def main():
     # Load checkpoint
     checkpoint = load_checkpoint()
 
-    # Initialize LLM client
-    client = LLMClient(cascade_strategy=args.cascade_strategy)
+    # Initialize LLM client using factory (supports both rate_limited and error_driven strategies)
+    client = create_llm_client(strategy=args.cascade_strategy)
 
     # Statistics
     sections_processed = 0

@@ -28,7 +28,7 @@ import torch
 from sentence_transformers import CrossEncoder
 
 from common import NDJSONReader, NDJSONWriter, setup_logging, validate_record, PIPELINE_VERSION
-from llm_client import LLMClient
+from llm_factory import create_llm_client, add_cascade_argument
 from models import SimilarityClassification
 
 logger = setup_logging(__name__)
@@ -235,97 +235,6 @@ def save_checkpoint(checkpoint: dict):
     logger.debug(f"Saved checkpoint: {len(checkpoint['processed_pairs'])} pairs processed")
 
 
-def process_pair(
-    pair: dict,
-    sections: Dict[str, str],
-    client: LLMClient
-) -> tuple[dict | None, str, dict | None]:
-    """
-    Process a single similarity pair and return the result.
-
-    Args:
-        pair: Dict with "section_a", "section_b", "similarity" keys
-        sections: Dict mapping section_id -> text_plain
-        client: LLMClient instance
-
-    Returns:
-        (record_dict or None, model_used, triage_result or None)
-    """
-    section_a = pair["section_a"]
-    section_b = pair["section_b"]
-    similarity = pair["similarity"]
-
-    # Get section texts
-    text_a = sections.get(section_a)
-    text_b = sections.get(section_b)
-
-    if not text_a or not text_b:
-        logger.warning(f"Missing text for {section_a} or {section_b}, skipping")
-        return None, "missing_text", None
-
-    # STEP 1: FAST PASS - Cross-Encoder Triage (Model Cascading)
-    triage = get_triage_classification(text_a, text_b)
-
-    # STEP 2: FILTER - If neutral (just "related") with high confidence, skip LLM
-    if triage and triage["label"] == "neutral" and triage["score"] > 0.5:
-        logger.debug(f"Triage: {section_a}-{section_b} → neutral ({triage['score']:.2f}), skipping LLM")
-
-        # Create "related" classification automatically
-        record = {
-            "section_a": section_a,
-            "section_b": section_b,
-            "similarity": similarity,
-            "classification": "related",
-            "explanation": f"Automated logic check deemed these sections related but not conflicting (Confidence: {triage['score']:.2f}). No duplicate, superseded, or conflicting relationship detected.",
-            "model_used": "cross-encoder-xsmall",
-            "analyzed_at": datetime.utcnow().isoformat() + "Z",
-            "cross_encoder_label": triage["label"],
-            "cross_encoder_score": triage["score"]
-        }
-
-        return record, "cross-encoder-xsmall", triage
-
-    # STEP 3: GRADUATE - Entailment/Contradiction flagged → send to LLM for verification
-    if triage and triage["label"] in ["entailment", "contradiction"]:
-        logger.debug(f"Triage: {section_a}-{section_b} → {triage['label']} ({triage['score']:.2f}), graduating to LLM")
-
-    # Classify with LLM using structured outputs (with triage context if available)
-    result, model_used = classify_similarity(
-        text_a, text_b, section_a, section_b, similarity, client,
-        triage_context=triage
-    )
-
-    if result is None:
-        return None, "failed", triage
-
-    # Convert Pydantic model to dict for output
-    record = {
-        "section_a": result.section_a,
-        "section_b": result.section_b,
-        "similarity": result.similarity,
-        "classification": result.classification,
-        "explanation": result.explanation,
-        "model_used": result.model_used,
-        "analyzed_at": result.analyzed_at,
-        "metadata": result.metadata or {"pipeline_version": PIPELINE_VERSION}
-    }
-
-    # Add cross-encoder triage metadata if available
-    if result.cross_encoder_label:
-        record["cross_encoder_label"] = result.cross_encoder_label
-    if result.cross_encoder_score is not None:
-        record["cross_encoder_score"] = result.cross_encoder_score
-
-    # Validate record
-    required_fields = ["section_a", "section_b", "similarity", "classification",
-                     "explanation", "model_used", "analyzed_at"]
-    if not validate_record(record, required_fields):
-        logger.error(f"Invalid record for {section_a}-{section_b}, skipping")
-        return None, "failed", triage
-
-    return record, model_used, triage
-
-
 def main():
     parser = argparse.ArgumentParser(
         description="Classify similarity relationships using LLM analysis"
@@ -346,17 +255,14 @@ def main():
         help="Output NDJSON file (classifications)"
     )
     parser.add_argument(
-        "--cascade-strategy",
-        dest="cascade_strategy",
-        choices=["simple", "extended"],
-        default="extended",
-        help="LLM cascade strategy: 'simple' (Gemini→Ollama) or 'extended' (Gemini→Groq→Ollama). Defaults to 'extended'."
+        "--workers",
+        type=int,
+        default=1,
+        help="Number of concurrent workers for processing pairs (default: 1)"
     )
-    parser.add_argument(
-        "--parallel",
-        action="store_true",
-        help="Enable parallel execution of models within tiers (faster but uses more API quota)"
-    )
+
+    # Add cascade strategy argument using factory helper
+    add_cascade_argument(parser)
 
     args = parser.parse_args()
 
@@ -374,8 +280,6 @@ def main():
 
     logger.info(f"Classifying similarities from {similarities_file}")
     logger.info(f"Pipeline version: {PIPELINE_VERSION}")
-    if args.parallel:
-        logger.info(f"⚡ Parallel execution enabled")
 
     # Load sections into memory
     sections = load_sections(sections_file)
@@ -383,8 +287,8 @@ def main():
     # Load checkpoint
     checkpoint = load_checkpoint()
 
-    # Initialize LLM client with extended cascade strategy for similarity classification
-    client = LLMClient(cascade_strategy=args.cascade_strategy, parallel_execution=args.parallel)
+    # Initialize LLM client using factory (supports both rate_limited and error_driven strategies)
+    client = create_llm_client(strategy=args.cascade_strategy)
 
     # Statistics
     pairs_processed = 0
