@@ -415,8 +415,8 @@ class ReportingRequirement(BaseModel):
         description="Section ID (set by pipeline, not LLM)",
     )
     has_reporting: bool = Field(
-        ...,
-        description="True if section mandates any reporting, filing, or notice requirement",
+        default=False,
+        description="True if section mandates any reporting, filing, or notice requirement (default: False if LLM doesn't return)",
     )
     reporting_summary: str = Field(
         default="",
