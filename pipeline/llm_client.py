@@ -48,6 +48,8 @@ import instructor
 import os
 import time
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 from typing import Optional, TypeVar, Type, Any, Dict
 from pydantic import BaseModel
 import requests
@@ -69,6 +71,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 # Cascade strategy configuration
 CASCADE_STRATEGY = os.getenv("LLM_CASCADE_STRATEGY", "extended")  # "simple" or "extended"
+PARALLEL_EXECUTION = os.getenv("LLM_PARALLEL_EXECUTION", "false").lower() == "true"  # Try models in parallel within tiers
 
 # Model configurations with rate limits (RPM, RPD, TPM)
 # Ordered by model version: 2.5 Flash → 2.5 Flash-Lite → 2.0 Flash → 2.0 Flash-Lite
@@ -106,11 +109,12 @@ GEMINI_RETRY_INTERVAL = 600  # seconds (10 minutes) before retrying Gemini after
 
 
 class RateLimiter:
-    """Track API calls and enforce rate limits per model."""
+    """Track API calls and enforce rate limits per model. Thread-safe."""
 
     def __init__(self):
         # Track calls per model: model_name -> {"minute_calls": [], "day_calls": 0, "day_start": date}
         self.model_trackers = {}
+        self.lock = Lock()  # Protect concurrent access
 
     def _get_tracker(self, model_config: dict):
         """Get or create tracker for a model."""
@@ -125,42 +129,44 @@ class RateLimiter:
 
     def wait_if_needed(self, model_config: dict) -> bool:
         """
-        Check if model is within rate limits.
+        Check if model is within rate limits. Thread-safe.
 
         Returns:
             True if model can be used, False to skip to next model
         """
-        now = datetime.utcnow()
-        tracker = self._get_tracker(model_config)
-        rpm_limit = model_config["rpm"]
-        rpd_limit = model_config["rpd"]
+        with self.lock:
+            now = datetime.utcnow()
+            tracker = self._get_tracker(model_config)
+            rpm_limit = model_config["rpm"]
+            rpd_limit = model_config["rpd"]
 
-        # Reset day counter if new day
-        if now.date() > tracker["day_start"]:
-            tracker["day_calls"] = 0
-            tracker["day_start"] = now.date()
+            # Reset day counter if new day
+            if now.date() > tracker["day_start"]:
+                tracker["day_calls"] = 0
+                tracker["day_start"] = now.date()
 
-        # Check daily limit
-        if tracker["day_calls"] >= rpd_limit:
-            logger.debug(f"Hit daily limit for {model_config['name']} ({rpd_limit}), trying next model")
-            return False
+            # Check daily limit
+            if tracker["day_calls"] >= rpd_limit:
+                logger.debug(f"Hit daily limit for {model_config['name']} ({rpd_limit}), trying next model")
+                return False
 
-        # Remove calls older than 1 minute
-        cutoff = now.timestamp() - RPM_WINDOW
-        tracker["minute_calls"] = [t for t in tracker["minute_calls"] if t > cutoff]
+            # Remove calls older than 1 minute
+            cutoff = now.timestamp() - RPM_WINDOW
+            tracker["minute_calls"] = [t for t in tracker["minute_calls"] if t > cutoff]
 
-        # Check per-minute limit
-        if len(tracker["minute_calls"]) >= rpm_limit:
-            logger.debug(f"Hit per-minute limit for {model_config['name']} ({rpm_limit} RPM), trying next model")
-            return False
+            # Check per-minute limit
+            if len(tracker["minute_calls"]) >= rpm_limit:
+                logger.debug(f"Hit per-minute limit for {model_config['name']} ({rpm_limit} RPM), trying next model")
+                return False
 
-        return True
+            return True
 
     def record_call(self, model_config: dict):
-        """Record that an API call was made for this model."""
-        tracker = self._get_tracker(model_config)
-        tracker["minute_calls"].append(datetime.utcnow().timestamp())
-        tracker["day_calls"] += 1
+        """Record that an API call was made for this model. Thread-safe."""
+        with self.lock:
+            tracker = self._get_tracker(model_config)
+            tracker["minute_calls"].append(datetime.utcnow().timestamp())
+            tracker["day_calls"] += 1
 
 
 class LLMResponse(BaseModel):
@@ -669,6 +675,109 @@ Return only the JSON object, nothing else."""
         except Exception as e:
             logger.error(f"Unexpected error with Groq ({model_name}): {e}")
             return None
+
+    def _try_model(
+        self,
+        model_config: dict,
+        prompt: str,
+        response_model: Type[T],
+        tier: str  # "gemini" or "groq"
+    ) -> tuple[Optional[T], str]:
+        """
+        Try a single model and return (result, model_name) or (None, model_name).
+        Used for parallel execution.
+
+        Args:
+            model_config: Model configuration dict
+            prompt: The prompt to send
+            response_model: Pydantic model class
+            tier: Which tier this model belongs to
+
+        Returns:
+            Tuple of (validated_result_or_None, model_name)
+        """
+        model_name = model_config["name"]
+
+        # Check rate limits
+        if not self.rate_limiter.wait_if_needed(model_config):
+            logger.debug(f"{model_name} rate limited, skipping")
+            return (None, model_name)
+
+        # Call the appropriate API
+        if tier == "gemini":
+            result = self._call_gemini_with_instructor(prompt, response_model, model_name)
+        elif tier == "groq":
+            result = self._call_groq_with_instructor(prompt, response_model, model_name)
+        else:
+            return (None, model_name)
+
+        if result:
+            self.rate_limiter.record_call(model_config)
+
+        return (result, model_name)
+
+    def _try_tier_parallel(
+        self,
+        models: list[dict],
+        prompt: str,
+        response_model: Type[T],
+        tier_name: str,
+        section_id: Optional[str] = None
+    ) -> Optional[LLMResponse]:
+        """
+        Try all models in a tier in parallel, return first success.
+
+        Args:
+            models: List of model configurations
+            prompt: The prompt to send
+            response_model: Pydantic model class
+            tier_name: "gemini" or "groq"
+            section_id: Optional section ID for logging
+
+        Returns:
+            LLMResponse if any model succeeds, None if all fail
+        """
+        if not models:
+            return None
+
+        logger.info(f"⚡ Trying {len(models)} {tier_name} models in parallel...")
+
+        # Use ThreadPoolExecutor to call all models concurrently
+        with ThreadPoolExecutor(max_workers=len(models)) as executor:
+            # Submit all model calls
+            futures = {
+                executor.submit(self._try_model, model_config, prompt, response_model, tier_name): model_config
+                for model_config in models
+            }
+
+            # Wait for first success or all failures
+            for future in as_completed(futures):
+                model_config = futures[future]
+                model_name = model_config["name"]
+
+                try:
+                    result, returned_model_name = future.result()
+
+                    if result:
+                        # Success! Log and return
+                        self._log_model_switch(returned_model_name, f"Parallel {tier_name} tier")
+                        logger.debug(f"✓ {returned_model_name} succeeded" + (f" for {section_id}" if section_id else ""))
+
+                        # Track statistics
+                        self.stats['current_model_calls'] += 1
+                        self.stats['model_call_counts'][returned_model_name] = \
+                            self.stats['model_call_counts'].get(returned_model_name, 0) + 1
+
+                        # Cancel remaining futures
+                        for f in futures:
+                            f.cancel()
+
+                        return LLMResponse(data=result, model_used=returned_model_name)
+                except Exception as e:
+                    logger.debug(f"Error in parallel execution for {model_name}: {e}")
+
+        logger.info(f"✗ All {tier_name} models failed")
+        return None
 
     def generate(
         self,
