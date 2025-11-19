@@ -97,7 +97,7 @@ OLLAMA_MODEL = "phi4-mini"
 # Rate limiting configuration
 RPM_WINDOW = 60  # seconds
 GEMINI_CALL_DELAY = 0.1  # seconds between Gemini calls to avoid rate limits
-GEMINI_RETRY_INTERVAL = 180  # seconds (3 minutes) before retrying Gemini after fallback
+GEMINI_RETRY_INTERVAL = 600  # seconds (10 minutes) before retrying Gemini after fallback
 
 
 class RateLimiter:
