@@ -9,7 +9,7 @@ This module provides a single interface for calling LLMs with Pydantic validatio
 
 Cascade Strategies:
 - "simple" (default): Gemini → Ollama (preserves Groq rate limits)
-- "extended": Gemini → Groq (7 models) → Ollama (maximum resilience)
+- "extended": Gemini → Groq (9 models) → Ollama (maximum resilience)
 
 Key features:
 - Automatic validation and retry via Pydantic
@@ -80,8 +80,13 @@ GEMINI_MODELS = [
 ]
 
 # Groq model configurations (OpenAI-compatible API)
-# Starting with kimi-k2, then other models in order of capability
+# Ordered by capability: compound models first, then high-capacity models
 GROQ_MODELS = [
+    # Compound models (highest quality)
+    {"name": "groq/compound", "rpm": 30, "rpd": 250, "tpm": 70000},
+    {"name": "groq/compound-mini", "rpm": 30, "rpd": 250, "tpm": 70000},
+
+    # High-capacity models
     {"name": "moonshotai/kimi-k2-instruct", "rpm": 60, "rpd": 1000, "tpm": 10000},
     {"name": "openai/gpt-oss-120b", "rpm": 30, "rpd": 1000, "tpm": 8000},
     {"name": "qwen/qwen3-32b", "rpm": 60, "rpd": 1000, "tpm": 6000},
@@ -227,7 +232,7 @@ class LLMClient:
         # Log initialization
         strategy_desc = {
             'simple': 'Gemini (4) → Ollama (1)',
-            'extended': 'Gemini (4) → Groq (7) → Ollama (1)'
+            'extended': 'Gemini (4) → Groq (9) → Ollama (1)'
         }
         logger.info(f"LLM Client initialized with '{self.cascade_strategy}' cascade strategy:")
         logger.info(f"  {strategy_desc[self.cascade_strategy]}")
