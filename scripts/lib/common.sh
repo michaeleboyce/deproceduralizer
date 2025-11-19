@@ -15,17 +15,18 @@ NC='\033[0m' # No Color
 validate_corpus() {
     local corpus=$1
     case "$corpus" in
-        small|medium|large) return 0 ;;
+        small|small_plus|medium|large) return 0 ;;
         *)
             echo -e "${RED}ERROR: Invalid corpus '$corpus'${NC}" >&2
-            echo "Valid options: small, medium, large" >&2
+            echo "Valid options: small, small_plus, medium, large" >&2
             echo "" >&2
             echo "Corpus definitions:" >&2
-            echo "  small  - Titles 1-2 (~100 sections)" >&2
-            echo "  medium - Titles 1-7 (~350-400 sections)" >&2
-            echo "  large  - All DC Code (~50 titles)" >&2
+            echo "  small      - Titles 1-2 (~100 sections)" >&2
+            echo "  small_plus - Titles 1-4 (~200 sections)" >&2
+            echo "  medium     - Titles 1-7 (~350-400 sections)" >&2
+            echo "  large      - All DC Code (~50 titles)" >&2
             echo "" >&2
-            echo "Usage: $0 --corpus={small|medium|large} [OPTIONS]" >&2
+            echo "Usage: $0 --corpus={small|small_plus|medium|large} [OPTIONS]" >&2
             exit 1
             ;;
     esac
@@ -132,6 +133,7 @@ validate_source_directory() {
 
     case "$corpus" in
         small) source_dir="data/subsets" ;;
+        small_plus) source_dir="data/subsets_small_plus" ;;
         medium) source_dir="data/subsets_medium" ;;
         large) source_dir="data/raw/dc-law-xml/us/dc/council/code/titles" ;;
     esac
@@ -141,6 +143,9 @@ validate_source_directory() {
         case "$corpus" in
             small)
                 echo "Run first: ./scripts/make_subset.sh" >&2
+                ;;
+            small_plus)
+                echo "Run first: ./scripts/make_subset_small_plus.sh" >&2
                 ;;
             medium)
                 echo "Run first: ./scripts/make_subset_medium.sh" >&2
@@ -391,6 +396,7 @@ get_source_dir() {
     local corpus=$1
     case "$corpus" in
         small) echo "data/subsets" ;;
+        small_plus) echo "data/subsets_small_plus" ;;
         medium) echo "data/subsets_medium" ;;
         large) echo "data/raw/dc-law-xml/us/dc/council/code/titles" ;;
     esac

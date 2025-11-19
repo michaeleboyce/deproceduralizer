@@ -16,26 +16,31 @@ show_help() {
     cat << EOF
 DC Code Pipeline Runner
 
-Usage: $0 --corpus={small|medium|large} [OPTIONS]
+Usage: $0 --corpus={small|small_plus|medium|large} [OPTIONS]
 
 Required Arguments:
   --corpus=CORPUS        Corpus size to process
-                         small  - Titles 1-2 (~100 sections, ~20-30 min)
-                         medium - Titles 1-10 (~500-600 sections, ~5-6 hours)
-                         large  - All DC Code (~50 titles, ~days)
+                         small      - Titles 1-2 (~100 sections, ~20-30 min)
+                         small_plus - Titles 1-4 (~200 sections, ~30-45 min)
+                         medium     - Titles 1-7 (~600 sections, ~5-6 hours)
+                         large      - All DC Code (~50 titles, ~days)
 
 Optional Arguments:
   --steps=STEPS          Steps to run (default: all)
                          Examples: 'all', '1-3', '1,3,5'
   --clean                Clean start (remove checkpoints)
-  --parallel             Enable parallel LLM model selection (try models concurrently)
   --workers=N            Process N sections concurrently (default: 1, recommended: 4-8)
+  --cascade-strategy=S   LLM cascade strategy (default: auto-select based on workers)
+                         error_driven  - Try until error, reactive failure handling
+                         rate_limited  - Sequential with preemptive rate limiting
+  --check-all-sections   Check all sections for reporting (bypass cross-encoder filter)
+                         Default: use semantic pre-filter (40-60% fewer LLM calls)
   --help                 Show this help message
 
 Pipeline Steps:
   1. Parse XML sections
   2. Extract cross-references
-  3. Extract obligations (LLM-based)
+  3. Extract obligations (regex-based, fast & free)
   4. Compute similarities (embeddings)
   5. Detect reporting requirements (LLM)
   6. Classify similarity relationships (LLM)
@@ -48,14 +53,18 @@ Examples:
   # Run with 8 concurrent workers (much faster)
   $0 --corpus=medium --workers=8
 
-  # Combine parallel models + workers for maximum speed
-  $0 --corpus=medium --parallel --workers=8 --clean
+  # Clean start with 8 workers
+  $0 --corpus=medium --workers=8 --clean
 
-  # Run only LLM steps with 8 workers
-  $0 --corpus=small --steps=3,5,6,7 --workers=8
+  # Run only LLM steps with 4 workers
+  $0 --corpus=small --steps=5,6,7 --workers=4
+
+  # Use error-driven cascade with 4 workers
+  $0 --corpus=medium --workers=4 --cascade-strategy=error_driven
 
 Notes:
-  - Steps 3, 5, 6, 7 require Ollama (LLM)
+  - Step 3 uses fast regex extraction (no LLM required)
+  - Steps 5, 6, 7 require Ollama (LLM)
   - Step 4 requires embeddings (Ollama nomic-embed-text)
   - All steps support checkpoint/resume
   - Use --clean to start fresh and remove checkpoints
@@ -70,8 +79,9 @@ EOF
 CORPUS=""
 STEPS="all"
 CLEAN=false
-PARALLEL=false
 WORKERS=1
+CASCADE_STRATEGY=""
+CHECK_ALL_SECTIONS=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -87,12 +97,16 @@ while [[ $# -gt 0 ]]; do
             CLEAN=true
             shift
             ;;
-        --parallel)
-            PARALLEL=true
-            shift
-            ;;
         --workers=*)
             WORKERS="${1#*=}"
+            shift
+            ;;
+        --cascade-strategy=*)
+            CASCADE_STRATEGY="${1#*=}"
+            shift
+            ;;
+        --check-all-sections)
+            CHECK_ALL_SECTIONS=true
             shift
             ;;
         --help|-h)
@@ -131,14 +145,6 @@ validate_source_directory "$CORPUS"
 # Activate virtual environment
 source .venv/bin/activate
 
-# Export parallel execution flag if enabled
-if [[ "$PARALLEL" == true ]]; then
-    export LLM_PARALLEL_EXECUTION=true
-    log_info "Parallel LLM model selection enabled"
-else
-    export LLM_PARALLEL_EXECUTION=false
-fi
-
 # Validate and export worker count
 if ! [[ "$WORKERS" =~ ^[0-9]+$ ]] || [[ "$WORKERS" -lt 1 ]]; then
     echo -e "${RED}ERROR: --workers must be a positive integer${NC}" >&2
@@ -148,6 +154,22 @@ fi
 export PIPELINE_WORKERS=$WORKERS
 if [[ "$WORKERS" -gt 1 ]]; then
     log_info "Data parallelization enabled: $WORKERS concurrent workers"
+fi
+
+# Validate and export cascade strategy
+if [[ -n "$CASCADE_STRATEGY" ]]; then
+    if [[ "$CASCADE_STRATEGY" != "error_driven" && "$CASCADE_STRATEGY" != "rate_limited" ]]; then
+        echo -e "${RED}ERROR: --cascade-strategy must be 'error_driven' or 'rate_limited'${NC}" >&2
+        exit 1
+    fi
+    export LLM_CASCADE_STRATEGY=$CASCADE_STRATEGY
+    log_info "LLM cascade strategy: $CASCADE_STRATEGY"
+fi
+
+# Export check-all-sections flag
+export CHECK_ALL_SECTIONS=$CHECK_ALL_SECTIONS
+if [[ "$CHECK_ALL_SECTIONS" == "true" ]]; then
+    log_info "Cross-encoder filter DISABLED - checking all sections for reporting"
 fi
 
 #===============================================================================

@@ -208,21 +208,46 @@ def main():
         type=int,
         help="Limit number of sections to process (for testing)"
     )
+    parser.add_argument(
+        "--check-all-sections",
+        action="store_true",
+        help="Check all sections (bypass cross-encoder filter). Default: use pre-filtered candidates from stage 45."
+    )
 
     # Add cascade strategy argument using factory helper
     add_cascade_argument(parser)
 
     args = parser.parse_args()
 
-    input_file = Path(args.input_file)
+    # Determine input file based on --check-all-sections flag
+    if args.check_all_sections:
+        # Use all sections (bypass filter)
+        input_file = Path(args.input_file)
+        logger.info("🔍 Mode: Checking ALL sections (cross-encoder filter bypassed)")
+    else:
+        # Default: use pre-filtered candidates from stage 45
+        # Derive candidates file from input file by replacing "sections" with "reporting_candidates"
+        input_path = Path(args.input_file)
+        candidates_file = input_path.parent / input_path.name.replace("sections_", "reporting_candidates_")
+
+        if not candidates_file.exists():
+            logger.error(f"❌ Candidates file not found: {candidates_file}")
+            logger.error("   Run stage 45 first: python pipeline/45_cross_encoder_reporting_filter.py")
+            logger.error("   Or use --check-all-sections to bypass the filter")
+            return 1
+
+        input_file = candidates_file
+        logger.info(f"🎯 Mode: Using pre-filtered candidates (cross-encoder filter applied)")
+        logger.info(f"   Candidates file: {input_file}")
+
     output_file = Path(args.out)
 
     if not input_file.exists():
-        logger.error(f"Input file not found: {input_file}")
+        logger.error(f"❌ Input file not found: {input_file}")
         return 1
 
-    logger.info(f"Detecting reporting requirements in {input_file}")
-    logger.info(f"Pipeline version: {PIPELINE_VERSION}")
+    logger.info(f"📊 Detecting reporting requirements in {input_file}")
+    logger.info(f"📊 Pipeline version: {PIPELINE_VERSION}")
 
     # Load checkpoint
     checkpoint = load_checkpoint()

@@ -79,64 +79,39 @@ run_step_2_extract_refs() {
 }
 
 #===============================================================================
-# STEP 3: Extract Obligations (LLM-based)
+# STEP 3: Extract Obligations (Regex-based)
 #===============================================================================
 
 run_step_3_extract_obligations() {
     local corpus=$1
     local start_time=$(date +%s)
 
-    log_step 3 7 "Extract obligations (LLM)" "IN_PROGRESS"
+    log_step 3 7 "Extract obligations (regex)" "IN_PROGRESS"
     echo ""
 
-    # Check Ollama
-    if ! check_ollama "warn"; then
-        log_warning "Ollama not available. Falling back to regex-based extraction..."
-
-        local suffix=$(get_output_suffix "$corpus")
-        local input_file="data/outputs/sections${suffix}.ndjson"
-        local deadlines_file="data/outputs/deadlines${suffix}.ndjson"
-        local amounts_file="data/outputs/amounts${suffix}.ndjson"
-
-        python pipeline/30_regex_obligations.py \
-            --in "$input_file" \
-            --deadlines "$deadlines_file" \
-            --amounts "$amounts_file" || {
-            log_error "Regex obligation extraction failed"
-            exit 1
-        }
-
-        validate_output_file "$deadlines_file" "Extract deadlines"
-        validate_output_file "$amounts_file" "Extract amounts"
-
-        local deadline_count=$(wc -l < "$deadlines_file" | tr -d ' ')
-        local amount_count=$(wc -l < "$amounts_file" | tr -d ' ')
-        local duration=$(($(date +%s) - start_time))
-
-        log_step 3 7 "Extract obligations (regex)" "DONE"
-        echo " [$(format_duration $duration) - $deadline_count deadlines, $amount_count amounts]"
-        return 0
-    fi
-
-    # LLM-based extraction
+    # Default to fast, free regex-based extraction
     local suffix=$(get_output_suffix "$corpus")
     local input_file="data/outputs/sections${suffix}.ndjson"
-    local output_file="data/outputs/obligations_enhanced${suffix}.ndjson"
+    local deadlines_file="data/outputs/deadlines${suffix}.ndjson"
+    local amounts_file="data/outputs/amounts${suffix}.ndjson"
 
-    python pipeline/35_llm_obligations.py \
+    python pipeline/30_regex_obligations.py \
         --in "$input_file" \
-        --out "$output_file" || {
-        log_error "LLM obligation extraction failed"
+        --deadlines "$deadlines_file" \
+        --amounts "$amounts_file" || {
+        log_error "Regex obligation extraction failed"
         exit 1
     }
 
-    validate_output_file "$output_file" "Extract obligations"
+    validate_output_file "$deadlines_file" "Extract deadlines"
+    validate_output_file "$amounts_file" "Extract amounts"
 
-    local obligation_count=$(wc -l < "$output_file" | tr -d ' ')
+    local deadline_count=$(wc -l < "$deadlines_file" | tr -d ' ')
+    local amount_count=$(wc -l < "$amounts_file" | tr -d ' ')
     local duration=$(($(date +%s) - start_time))
 
-    log_step 3 7 "Extract obligations (LLM)" "DONE"
-    echo " [$(format_duration $duration) - $obligation_count obligations]"
+    log_step 3 7 "Extract obligations (regex)" "DONE"
+    echo " [$(format_duration $duration) - $deadline_count deadlines, $amount_count amounts]"
 }
 
 #===============================================================================
@@ -199,19 +174,42 @@ run_step_5_detect_reporting() {
     }
 
     local suffix=$(get_output_suffix "$corpus")
-    local input_file="data/outputs/sections${suffix}.ndjson"
+    local sections_file="data/outputs/sections${suffix}.ndjson"
+    local candidates_file="data/outputs/reporting_candidates${suffix}.ndjson"
     local output_file="data/outputs/reporting${suffix}.ndjson"
 
-    # Validate input exists
-    if [[ ! -f "$input_file" ]]; then
-        log_error "Input file not found: $input_file"
+    # Validate sections file exists
+    if [[ ! -f "$sections_file" ]]; then
+        log_error "Input file not found: $sections_file"
         echo "Run step 1 first: Parse XML sections"
         exit 1
     fi
 
-    python pipeline/50_llm_reporting.py \
-        --in "$input_file" \
-        --out "$output_file" || {
+    # Run cross-encoder filter first (unless --check-all-sections is set)
+    if [[ "$CHECK_ALL_SECTIONS" != "true" ]]; then
+        log_info "Running cross-encoder semantic filter..."
+        python pipeline/45_cross_encoder_reporting_filter.py \
+            --in "$sections_file" \
+            --out "$candidates_file" || {
+            log_error "Cross-encoder filtering failed"
+            exit 1
+        }
+
+        local candidate_count=$(wc -l < "$candidates_file" | tr -d ' ')
+        log_success "Filtered to $candidate_count candidate sections"
+    else
+        log_info "Skipping cross-encoder filter (--check-all-sections enabled)"
+    fi
+
+    # Build command for LLM reporting detection
+    local cmd="python pipeline/50_llm_reporting.py --in \"$sections_file\" --out \"$output_file\""
+
+    # Add --check-all-sections if set
+    if [[ "$CHECK_ALL_SECTIONS" == "true" ]]; then
+        cmd="$cmd --check-all-sections"
+    fi
+
+    eval "$cmd" || {
         log_error "Reporting detection failed"
         exit 1
     }
@@ -261,10 +259,14 @@ run_step_6_classify_similarities() {
         exit 1
     fi
 
-    python pipeline/55_similarity_classification.py \
-        --similarities "$similarities_file" \
-        --sections "$sections_file" \
-        --out "$output_file" || {
+    # Build command
+    local cmd="python pipeline/55_similarity_classification.py --similarities \"$similarities_file\" --sections \"$sections_file\" --out \"$output_file\""
+
+    if [[ -n "$PIPELINE_WORKERS" ]] && [[ "$PIPELINE_WORKERS" -gt 1 ]]; then
+        cmd="$cmd --workers $PIPELINE_WORKERS"
+    fi
+
+    eval "$cmd" || {
         log_error "Similarity classification failed"
         exit 1
     }
