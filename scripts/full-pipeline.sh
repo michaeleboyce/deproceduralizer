@@ -168,14 +168,14 @@ if [[ "$CLEAN" == true ]]; then
     print_header "STEP 1: CLEANING"
 
     # Clean database
-    if command -v python &> /dev/null; then
-        log_info "Cleaning database..."
+    log_info "Cleaning database..."
+    if [[ -d ".venv" ]]; then
         source .venv/bin/activate
         python dbtools/clean_database.py << EOF
 yes
 EOF
     else
-        log_warning "Python not found, skipping database clean"
+        log_warning "Virtual environment not found, skipping database clean"
     fi
 
     # Clean state
