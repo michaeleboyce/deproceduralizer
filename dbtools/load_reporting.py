@@ -36,7 +36,7 @@ class ReportingLoader(BaseLoader):
 
     def validate_record(self, record):
         """Validate a reporting record has required fields."""
-        required = ['id', 'has_reporting', 'reporting_summary', 'tags', 'highlight_phrases']
+        required = ['id', 'has_reporting', 'reporting_summary', 'reporting_text', 'tags', 'highlight_phrases']
 
         for field in required:
             if field not in record:
@@ -75,6 +75,7 @@ class ReportingLoader(BaseLoader):
                 'id': report['id'],
                 'has_reporting': report['has_reporting'],
                 'reporting_summary': report['reporting_summary'],
+                'reporting_text': report.get('reporting_text', ''),
                 'tags': Json(report['tags'])  # Convert list to jsonb
             })
 
@@ -83,6 +84,7 @@ class ReportingLoader(BaseLoader):
             UPDATE sections SET
               has_reporting = %(has_reporting)s,
               reporting_summary = %(reporting_summary)s,
+              reporting_text = %(reporting_text)s,
               reporting_tags = %(tags)s,
               updated_at = now()
             WHERE jurisdiction = %(jurisdiction)s AND id = %(id)s

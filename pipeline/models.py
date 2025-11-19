@@ -413,6 +413,11 @@ class ReportingRequirement(BaseModel):
         description="Concise 1-2 sentence summary of reporting requirement",
         max_length=500,
     )
+    reporting_text: Optional[str] = Field(
+        None,
+        description="Exact full text of the reporting requirement from the section",
+        max_length=5000,
+    )
     tags: List[str] = Field(
         default_factory=list,
         description="High-level categorization tags (lowercase, kebab-case)",
@@ -491,6 +496,18 @@ class SimilarityClassification(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(
         None,
         description="Additional pipeline metadata",
+    )
+
+    # Cross-encoder triage fields (for Model Cascading optimization)
+    cross_encoder_label: Optional[str] = Field(
+        None,
+        description="NLI label from cross-encoder: entailment, contradiction, or neutral",
+    )
+    cross_encoder_score: Optional[float] = Field(
+        None,
+        description="Confidence score from cross-encoder (0.0 to 1.0)",
+        ge=0.0,
+        le=1.0,
     )
 
     @field_validator("jurisdiction")

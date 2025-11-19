@@ -67,9 +67,23 @@ class NDJSONReader:
     def __init__(self, file_path: str, state_manager: Optional[StateManager] = None):
         self.file_path = Path(file_path)
         self.state_manager = state_manager
-        self.start_offset = (
-            state_manager.get_byte_offset() if state_manager else 0
-        )
+
+        # Get file size to validate state offset
+        file_size = self.file_path.stat().st_size if self.file_path.exists() else 0
+        saved_offset = state_manager.get_byte_offset() if state_manager else 0
+
+        # Reset offset if it's beyond current file size (stale state)
+        if saved_offset > file_size:
+            logging.warning(
+                f"State offset ({saved_offset}) exceeds file size ({file_size}). "
+                "Resetting to start (stale state detected)."
+            )
+            self.start_offset = 0
+            if state_manager:
+                state_manager.set_byte_offset(0)
+                state_manager.save()
+        else:
+            self.start_offset = saved_offset
 
     def __iter__(self) -> Iterator[Dict[str, Any]]:
         """Iterate over records, resuming from saved offset if available."""
@@ -130,14 +144,42 @@ class NDJSONWriter:
         self.file_handle.flush()  # Ensure written to disk
 
 
+class TqdmLoggingHandler(logging.Handler):
+    """
+    Logging handler that routes messages through tqdm.write()
+    to avoid breaking progress bars.
+    """
+    def __init__(self, level=logging.NOTSET):
+        super().__init__(level)
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            tqdm.write(msg)
+            self.flush()
+        except Exception:
+            self.handleError(record)
+
+
 def setup_logging(name: str, level: int = logging.INFO) -> logging.Logger:
-    """Set up logging with consistent format."""
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    return logging.getLogger(name)
+    """Set up logging with consistent format and tqdm support."""
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    
+    # Check if handler already exists to avoid duplicates
+    if not logger.handlers:
+        handler = TqdmLoggingHandler()
+        formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S"
+        )
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        
+        # Prevent propagation to root logger which might have default handlers
+        logger.propagate = False
+        
+    return logger
 
 
 def count_lines(file_path: str) -> int:

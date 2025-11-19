@@ -39,19 +39,33 @@ class ClassificationsLoader(BaseLoader):
     def _insert_batch(self, cursor, batch):
         """Insert a batch of classifications with ON CONFLICT DO UPDATE."""
         # SQL for upsert - allows re-running with updated classifications
+        # Now includes cross-encoder triage metadata for Model Cascading
         sql = """
             INSERT INTO section_similarity_classifications
               (jurisdiction, section_a, section_b, classification, explanation,
-               model_used, analyzed_at)
+               model_used, analyzed_at, cross_encoder_label, cross_encoder_score)
             VALUES
               (%(jurisdiction)s, %(section_a)s, %(section_b)s, %(classification)s,
-               %(explanation)s, %(model_used)s, %(analyzed_at)s)
+               %(explanation)s, %(model_used)s, %(analyzed_at)s,
+               %(cross_encoder_label)s, %(cross_encoder_score)s)
             ON CONFLICT (jurisdiction, section_a, section_b) DO UPDATE
               SET classification = EXCLUDED.classification,
                   explanation = EXCLUDED.explanation,
                   model_used = EXCLUDED.model_used,
-                  analyzed_at = EXCLUDED.analyzed_at
+                  analyzed_at = EXCLUDED.analyzed_at,
+                  cross_encoder_label = EXCLUDED.cross_encoder_label,
+                  cross_encoder_score = EXCLUDED.cross_encoder_score
         """
+
+        # Normalize batch to ensure cross-encoder fields exist (backwards compatibility)
+        normalized_batch = []
+        for record in batch:
+            normalized = record.copy()
+            if 'cross_encoder_label' not in normalized:
+                normalized['cross_encoder_label'] = None
+            if 'cross_encoder_score' not in normalized:
+                normalized['cross_encoder_score'] = None
+            normalized_batch.append(normalized)
 
         try:
             # Count before insert to track new vs updated
@@ -61,7 +75,7 @@ class ClassificationsLoader(BaseLoader):
             )
             before_count = cursor.fetchone()[0]
 
-            execute_batch(cursor, sql, batch)
+            execute_batch(cursor, sql, normalized_batch)
 
             # Count after to determine insertions vs updates
             cursor.execute(
