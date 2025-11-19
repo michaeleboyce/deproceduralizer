@@ -12,6 +12,9 @@ import {
   sectionHighlights,
   sectionTags,
   globalTags,
+  sectionAnachronisms,
+  anachronismIndicators,
+  sectionAnachronismHighlights,
 } from "@/db/schema";
 import { eq, or, and, sql } from "drizzle-orm";
 import SimilarSectionsList from "@/components/SimilarSectionsList";
@@ -251,6 +254,65 @@ export default async function SectionPage({
       eq(sectionTags.sectionId, id)
     ));
 
+  // Fetch anachronism analysis
+  const [anachronismAnalysis] = await db
+    .select()
+    .from(sectionAnachronisms)
+    .where(and(
+      eq(sectionAnachronisms.jurisdiction, jurisdiction),
+      eq(sectionAnachronisms.sectionId, id)
+    ))
+    .limit(1);
+
+  // Fetch anachronism indicators with their highlights if analysis exists
+  let anachronismIndicatorsData: Array<{
+    id: number;
+    category: string;
+    severity: string;
+    modernEquivalent: string | null;
+    recommendation: string;
+    explanation: string;
+    matchedPhrases: string[];
+  }> = [];
+
+  if (anachronismAnalysis?.hasAnachronism) {
+    const indicatorsResult = await db
+      .select({
+        id: anachronismIndicators.id,
+        category: anachronismIndicators.category,
+        severity: anachronismIndicators.severity,
+        modernEquivalent: anachronismIndicators.modernEquivalent,
+        recommendation: anachronismIndicators.recommendation,
+        explanation: anachronismIndicators.explanation,
+      })
+      .from(anachronismIndicators)
+      .where(and(
+        eq(anachronismIndicators.jurisdiction, jurisdiction),
+        eq(anachronismIndicators.sectionId, id)
+      ))
+      .orderBy(
+        sql`CASE ${anachronismIndicators.severity}
+          WHEN 'CRITICAL' THEN 1
+          WHEN 'HIGH' THEN 2
+          WHEN 'MEDIUM' THEN 3
+          WHEN 'LOW' THEN 4
+        END`
+      );
+
+    // Fetch all highlights for these indicators
+    for (const indicator of indicatorsResult) {
+      const highlights = await db
+        .select({ phrase: sectionAnachronismHighlights.phrase })
+        .from(sectionAnachronismHighlights)
+        .where(eq(sectionAnachronismHighlights.indicatorId, BigInt(indicator.id)));
+
+      anachronismIndicatorsData.push({
+        ...indicator,
+        matchedPhrases: highlights.map(h => h.phrase),
+      });
+    }
+  }
+
   // Apply highlighting to section HTML if there are phrases
   const highlightedHtml = section.hasReporting && phrasesToHighlight.length > 0
     ? highlightPhrases(section.textHtml, phrasesToHighlight.map(h => h.phrase))
@@ -271,6 +333,7 @@ export default async function SectionPage({
   // Build table of contents
   const tocItems = [
     { id: "section-text", label: "Section Text" },
+    anachronismAnalysis?.hasAnachronism && { id: "anachronisms", label: "Anachronisms" },
     similarSections.length > 0 && { id: "similar-sections", label: "Similar Sections" },
     { id: "citation-graph", label: "Citation Network" },
     enhancedObligations.length > 0 && { id: "extracted-obligations", label: "Extracted Obligations" },
@@ -313,6 +376,19 @@ export default async function SectionPage({
                 <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4 mt-4">
                   <h3 className="text-sm font-semibold text-slate-900 mb-3">Quick Stats</h3>
                   <div className="space-y-2 text-sm">
+                    {anachronismAnalysis?.hasAnachronism && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-600">Anachronisms:</span>
+                        <span className={`font-medium ${
+                          anachronismAnalysis.overallSeverity === 'CRITICAL' ? 'text-red-600' :
+                          anachronismAnalysis.overallSeverity === 'HIGH' ? 'text-orange-600' :
+                          anachronismAnalysis.overallSeverity === 'MEDIUM' ? 'text-yellow-600' :
+                          'text-slate-900'
+                        }`}>
+                          {anachronismIndicatorsData.length} ({anachronismAnalysis.overallSeverity})
+                        </span>
+                      </div>
+                    )}
                     {enhancedObligations.length > 0 && (
                       <div className="flex justify-between items-center">
                         <span className="text-slate-600">Obligations:</span>
@@ -412,6 +488,120 @@ export default async function SectionPage({
                   <div className="text-sm text-slate-700 bg-white/50 rounded p-3 italic border-l-4 border-violet-400">
                     &ldquo;{section.reportingText}&rdquo;
                   </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Anachronism Alert */}
+          {anachronismAnalysis?.hasAnachronism && (
+            <div id="anachronisms" className={`border rounded-lg p-6 mb-6 shadow-sm scroll-mt-20 ${
+              anachronismAnalysis.overallSeverity === 'CRITICAL' ? 'bg-red-50 border-red-300' :
+              anachronismAnalysis.overallSeverity === 'HIGH' ? 'bg-orange-50 border-orange-300' :
+              anachronismAnalysis.overallSeverity === 'MEDIUM' ? 'bg-yellow-50 border-yellow-300' :
+              'bg-slate-50 border-slate-300'
+            }`}>
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                <span className={`inline-block px-3 py-1 text-white text-sm font-semibold rounded-full ${
+                  anachronismAnalysis.overallSeverity === 'CRITICAL' ? 'bg-red-600' :
+                  anachronismAnalysis.overallSeverity === 'HIGH' ? 'bg-orange-600' :
+                  anachronismAnalysis.overallSeverity === 'MEDIUM' ? 'bg-yellow-600' :
+                  'bg-slate-600'
+                }`}>
+                  ⚠️ Anachronistic Language Detected ({anachronismAnalysis.overallSeverity})
+                </span>
+                {anachronismAnalysis.requiresImmediateReview && (
+                  <span className="inline-block px-2 py-0.5 bg-red-600 text-white text-xs font-medium rounded">
+                    IMMEDIATE REVIEW REQUIRED
+                  </span>
+                )}
+              </div>
+
+              {anachronismAnalysis.summary && (
+                <p className={`text-sm leading-relaxed mb-4 ${
+                  anachronismAnalysis.overallSeverity === 'CRITICAL' ? 'text-red-900' :
+                  anachronismAnalysis.overallSeverity === 'HIGH' ? 'text-orange-900' :
+                  anachronismAnalysis.overallSeverity === 'MEDIUM' ? 'text-yellow-900' :
+                  'text-slate-700'
+                }`}>
+                  {anachronismAnalysis.summary}
+                </p>
+              )}
+
+              {anachronismIndicatorsData.length > 0 && (
+                <div className="space-y-4">
+                  <h4 className="text-sm font-semibold text-slate-900 mb-2">
+                    Indicators Found ({anachronismIndicatorsData.length}):
+                  </h4>
+                  {anachronismIndicatorsData.map((indicator, index) => (
+                    <div
+                      key={index}
+                      className="bg-white/60 rounded-lg p-4 border border-slate-200"
+                    >
+                      <div className="flex items-start gap-3 mb-2">
+                        <span className={`inline-block px-2 py-1 text-white text-xs font-semibold rounded ${
+                          indicator.severity === 'CRITICAL' ? 'bg-red-600' :
+                          indicator.severity === 'HIGH' ? 'bg-orange-600' :
+                          indicator.severity === 'MEDIUM' ? 'bg-yellow-600' :
+                          'bg-slate-600'
+                        }`}>
+                          {indicator.severity}
+                        </span>
+                        <span className="inline-block px-2 py-1 bg-slate-200 text-slate-700 text-xs font-medium rounded">
+                          {indicator.category.replace(/_/g, ' ').toUpperCase()}
+                        </span>
+                        <span className={`inline-block px-2 py-1 text-xs font-medium rounded ${
+                          indicator.recommendation === 'REPEAL' ? 'bg-red-100 text-red-700' :
+                          indicator.recommendation === 'UPDATE' ? 'bg-orange-100 text-orange-700' :
+                          indicator.recommendation === 'REVIEW' ? 'bg-yellow-100 text-yellow-700' :
+                          'bg-green-100 text-green-700'
+                        }`}>
+                          {indicator.recommendation}
+                        </span>
+                      </div>
+
+                      <p className="text-sm text-slate-700 mb-3">
+                        {indicator.explanation}
+                      </p>
+
+                      {indicator.matchedPhrases.length > 0 && (
+                        <div className="mb-3">
+                          <span className="text-xs font-semibold text-slate-600 block mb-1">
+                            Matched Phrases:
+                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            {indicator.matchedPhrases.map((phrase, phraseIdx) => (
+                              <span
+                                key={phraseIdx}
+                                className="inline-block px-2 py-0.5 bg-yellow-100 text-yellow-900 text-xs rounded border border-yellow-300"
+                              >
+                                &ldquo;{phrase}&rdquo;
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {indicator.modernEquivalent && (
+                        <div className="pt-2 border-t border-slate-200">
+                          <span className="text-xs font-semibold text-slate-600">
+                            Modern Equivalent:{' '}
+                          </span>
+                          <span className="text-xs text-green-700 font-medium">
+                            {indicator.modernEquivalent}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {anachronismAnalysis.modelUsed && (
+                <div className="mt-4 pt-3 border-t border-slate-300">
+                  <span className="text-xs text-slate-500">
+                    Analyzed by: {anachronismAnalysis.modelUsed}
+                  </span>
                 </div>
               )}
             </div>

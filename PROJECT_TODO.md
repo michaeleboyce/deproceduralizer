@@ -941,6 +941,147 @@ Milestone 9: (Future) Add California, New York, other jurisdictions
 
 ---
 
+## 🕰️ Milestone 6.5: Anachronism Detection
+
+**Goal**: Identify outdated/anachronistic language in legal code sections
+**Status**: ✅ Complete
+
+**Rationale**: Before scaling to larger corpus, implement detection of outdated language that may indicate laws requiring modernization or review.
+
+### Implementation Strategy
+
+**Two-Stage Approach** (Efficient Piggybacking):
+1. **Stage 1 (Minimal Overhead)**: Add `potential_anachronism` boolean to existing LLM steps (obligations + reporting)
+2. **Stage 2 (Deep Analysis)**: Dedicated LLM analysis on flagged sections only (~10-20% of corpus)
+
+### Track A: Pipeline Implementation
+
+- [x] **A6.5.1** Add `potential_anachronism` field to Pydantic models
+  - Added to `ObligationsList` model (pipeline/models.py:325-328)
+  - Added to `ReportingRequirement` model (pipeline/models.py:435-438)
+- [x] **A6.5.2** Create `AnachronismIndicator` and `AnachronismAnalysis` Pydantic models
+  - 18 indicator categories (jim_crow, obsolete_technology, defunct_agency, etc.)
+  - Severity levels: CRITICAL, HIGH, MEDIUM, LOW
+  - Recommendations: REPEAL, UPDATE, REVIEW, PRESERVE
+- [x] **A6.5.3** Update obligations prompt for anachronism detection
+  - Modified `pipeline/35_llm_obligations.py` prompt (lines 101-110)
+  - Returns potential_anachronism with each analysis
+- [x] **A6.5.4** Update reporting prompt for anachronism detection
+  - Modified `pipeline/50_llm_reporting.py` prompt (lines 84-94)
+  - Returns potential_anachronism with each analysis
+- [x] **A6.5.5** Create `pipeline/60_llm_anachronisms.py` - Deep analysis script
+  - Reads both obligations and reporting outputs
+  - Filters for sections with `potential_anachronism=True`
+  - Performs comprehensive 18-category analysis
+  - Outputs structured anachronism data with indicators and highlights
+
+**Acceptance**: ✅ Complete - All pipeline scripts created and integrated
+
+---
+
+### Track B: Database Schema
+
+- [x] **B6.5.1** Create `section_anachronisms` table
+  - Primary analysis table (jurisdiction, section_id, has_anachronism, overall_severity, summary)
+  - Includes `requires_immediate_review` boolean for CRITICAL findings
+  - Foreign key to sections table
+- [x] **B6.5.2** Create `anachronism_indicators` table
+  - Individual anachronism details (category, severity, recommendation, explanation)
+  - Foreign key to section_anachronisms
+  - CHECK constraints for valid categories and severities
+- [x] **B6.5.3** Create `section_anachronism_highlights` table
+  - Matched phrases for UI highlighting
+  - Foreign key to anachronism_indicators
+- [x] **B6.5.4** Create indexes for anachronism queries
+  - Severity index (partial, only where has_anachronism=true)
+  - Immediate review index (partial, only where requires_immediate_review=true)
+  - Category and section lookup indexes
+- [x] **B6.5.5** Create `dbtools/load_anachronisms.py` loader
+  - Inherits from BaseLoader (DRY)
+  - Multi-table inserts with transaction integrity
+  - Handles indicators and highlights arrays
+
+**Acceptance**: ✅ Complete - All tables created with proper foreign keys and indexes
+
+---
+
+### Track C: UI Display
+
+- [x] **C6.5.1** Create `/api/anachronisms/route.ts` API endpoint
+  - ✅ Filter by severity (CRITICAL, HIGH, MEDIUM, LOW)
+  - ✅ Filter by category
+  - ✅ Filter by title/chapter
+  - ✅ "Requires immediate review" filter
+  - ✅ Search query support
+  - ✅ Pagination support
+  - ✅ Returns severity distribution and category counts
+- [x] **C6.5.2** Create Anachronisms Dashboard page (`/app/anachronisms/page.tsx`)
+  - ✅ Summary cards showing counts by severity
+  - ✅ Comprehensive filter UI (severity, category, title, chapter, review status, search)
+  - ✅ Table/card view with section links
+  - ✅ Active filters display
+  - ✅ Loading and error states
+  - ✅ Preview of top 3 indicators per section
+- [x] **C6.5.3** Add anachronism display to section detail page
+  - ✅ Prominent alert box with severity-based color coding (red=CRITICAL, orange=HIGH, yellow=MEDIUM, gray=LOW)
+  - ✅ "IMMEDIATE REVIEW REQUIRED" badge for critical findings
+  - ✅ Show matched phrases with highlighting
+  - ✅ Display modern equivalents and recommendations
+  - ✅ Category and recommendation badges for each indicator
+  - ✅ Added to table of contents
+  - ✅ Added to Quick Stats sidebar
+- [x] **C6.5.4** Update Navigation component
+  - ✅ Added "Anachronisms" link to main navigation
+  - ✅ Breadcrumb support for /anachronisms route
+  - ✅ Active state highlighting
+- [x] **C6.5.5** Update TypeScript database schema
+  - ✅ Added `sectionAnachronisms`, `anachronismIndicators`, `sectionAnachronismHighlights` tables
+  - ✅ Multi-jurisdiction composite keys
+  - ✅ Proper indexes for performance
+
+**Acceptance**: ✅ **COMPLETE** - Full anachronism detection UI implemented with dashboard, filters, section detail integration, and navigation
+
+---
+
+### Anachronism Detection Categories
+
+**18 Categories Across 4 Severity Levels**:
+
+**CRITICAL** (Unconstitutional/Discriminatory - Immediate Review):
+1. `jim_crow` - Racial classifications, segregation references
+2. `outdated_social_structures` - Discriminatory family/social law
+3. `obsolete_legal_terms` - Offensive disability/mental health terms
+
+**HIGH** (Defunct Entities):
+4. `defunct_agency` - Abolished government agencies
+5. `outdated_education` - Segregated educational institutions
+
+**MEDIUM** (Outdated Terms/Technology):
+6. `obsolete_technology` - Telegrams, typewriters, punch cards
+7. `gendered_titles` - Fireman, policeman, mailman
+8. `outdated_professions` - Lamplighter, iceman, elevator operator
+9. `outdated_medical_terms` - Consumption, dropsy, venereal disease
+10. `obsolete_transportation` - Horse and buggy, trolley car
+11. `obsolete_military` - Civil defense shelters, militia muster
+12. `prohibition_era` - Speakeasy, bootlegger, dry county
+13. `obsolete_religious` - Sabbath laws, Sunday closing laws
+
+**LOW** (Minor Updates):
+14. `archaic_measurements` - Rod, furlong, bushel
+15. `age_based` - Pre-1900 dates, $5 fines
+16. `environmental_agricultural` - Smoke abatement, bounty on wolves
+17. `commercial_business` - Peddler, hawker, warehouse receipts
+18. `obsolete_economic` - Mills (1/10 cent), gold coin, poll tax
+
+### Expected Performance
+
+- **Initial flagging rate**: ~15-25% of sections (Stage 1)
+- **Deep analysis confirms**: ~5-10% of total corpus (Stage 2)
+- **CRITICAL findings**: ~1-2% (Jim Crow, discriminatory provisions)
+- **Overhead**: Minimal (~1-2 tokens per section in Stage 1)
+
+---
+
 ## 📊 Milestone 7: Reporting Deep Analysis
 
 **Goal**: Advanced analytics on reporting requirements

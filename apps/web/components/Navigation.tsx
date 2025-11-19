@@ -24,6 +24,8 @@ export default function Navigation({ breadcrumbs }: NavigationProps) {
       crumbs.push({ label: "Search" });
     } else if (pathname === "/reporting") {
       crumbs.push({ label: "Reporting Requirements" });
+    } else if (pathname === "/anachronisms") {
+      crumbs.push({ label: "Anachronisms" });
     } else if (pathname === "/browse") {
       crumbs.push({ label: "Browse" });
     } else if (pathname.startsWith("/section/")) {
@@ -81,6 +83,16 @@ export default function Navigation({ breadcrumbs }: NavigationProps) {
                 }`}
               >
                 Reporting
+              </Link>
+              <Link
+                href="/anachronisms"
+                className={`font-medium transition-colors ${
+                  pathname === "/anachronisms"
+                    ? "text-teal-700"
+                    : "text-slate-700 hover:text-slate-900"
+                }`}
+              >
+                Anachronisms
               </Link>
               <Link
                 href="/dashboard/conflicts"

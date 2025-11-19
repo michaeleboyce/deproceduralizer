@@ -179,6 +179,57 @@ export const sectionSimilarityClassifications = pgTable("section_similarity_clas
 }));
 
 /**
+ * Anachronism analysis results for sections
+ */
+export const sectionAnachronisms = pgTable("section_anachronisms", {
+  jurisdiction: varchar("jurisdiction", { length: 10 }).notNull(),
+  sectionId: text("section_id").notNull(),
+  hasAnachronism: boolean("has_anachronism").notNull().default(false),
+  overallSeverity: text("overall_severity"), // 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'
+  summary: text("summary"),
+  requiresImmediateReview: boolean("requires_immediate_review").notNull().default(false),
+  modelUsed: text("model_used"),
+  analyzedAt: timestamp("analyzed_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.jurisdiction, table.sectionId] }),
+  severityIdx: index("idx_section_anachronisms_severity").on(table.jurisdiction, table.overallSeverity),
+  hasAnachronismIdx: index("idx_section_anachronisms_has_anachronism").on(table.jurisdiction, table.hasAnachronism),
+  immediateReviewIdx: index("idx_section_anachronisms_immediate_review").on(table.jurisdiction, table.requiresImmediateReview),
+}));
+
+/**
+ * Individual anachronism indicators found in sections
+ */
+export const anachronismIndicators = pgTable("anachronism_indicators", {
+  id: bigserial("id", { mode: "number" }),
+  jurisdiction: varchar("jurisdiction", { length: 10 }).notNull(),
+  sectionId: text("section_id").notNull(),
+  category: text("category").notNull(), // jim_crow, obsolete_technology, defunct_agency, etc.
+  severity: text("severity").notNull(), // CRITICAL, HIGH, MEDIUM, LOW
+  modernEquivalent: text("modern_equivalent"),
+  recommendation: text("recommendation").notNull(), // REPEAL, UPDATE, REVIEW, PRESERVE
+  explanation: text("explanation").notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.jurisdiction, table.id] }),
+  sectionIdx: index("idx_anachronism_indicators_section").on(table.jurisdiction, table.sectionId),
+  categoryIdx: index("idx_anachronism_indicators_category").on(table.jurisdiction, table.category),
+  severityIdx: index("idx_anachronism_indicators_severity").on(table.severity),
+  recommendationIdx: index("idx_anachronism_indicators_recommendation").on(table.recommendation),
+}));
+
+/**
+ * Matched phrases/highlights for anachronism indicators
+ */
+export const sectionAnachronismHighlights = pgTable("section_anachronism_highlights", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  indicatorId: bigint("indicator_id", { mode: "number" }).notNull(),
+  phrase: text("phrase").notNull(),
+}, (table) => ({
+  indicatorIdx: index("idx_section_anachronism_highlights_indicator").on(table.indicatorId),
+}));
+
+/**
  * Hierarchical structure table for legal code organization
  */
 export const structure = pgTable("structure", {
@@ -214,3 +265,6 @@ export type SectionHighlight = typeof sectionHighlights.$inferSelect;
 export type SectionTag = typeof sectionTags.$inferSelect;
 export type GlobalTag = typeof globalTags.$inferSelect;
 export type Structure = typeof structure.$inferSelect;
+export type SectionAnachronism = typeof sectionAnachronisms.$inferSelect;
+export type AnachronismIndicator = typeof anachronismIndicators.$inferSelect;
+export type SectionAnachronismHighlight = typeof sectionAnachronismHighlights.$inferSelect;
