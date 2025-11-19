@@ -64,21 +64,30 @@ export default function StructureNavigator({ className = '' }: StructureNavigato
     // Determine if this is a clickable section or just a container
     const isSection = node.level !== 'title' && node.level !== 'chapter' && node.level !== 'subchapter';
 
-    const content = (
-      <>
-        {hasChildren && (
-          <span className="flex-shrink-0 mt-0.5 mr-1 text-slate-400">
-            {isExpanded ? (
-              <ChevronDown size={16} />
+    return (
+      <div key={node.id} className="select-none">
+        <div
+          className="flex items-start py-1.5 px-2 hover:bg-slate-50 rounded-sm group transition-colors"
+          style={{ paddingLeft }}
+        >
+          {/* Expand/collapse icon */}
+          <button
+            onClick={() => hasChildren && toggleExpanded(node.id)}
+            className="flex-shrink-0 mt-0.5 mr-1 text-slate-400 hover:text-slate-600"
+          >
+            {hasChildren ? (
+              isExpanded ? (
+                <ChevronDown size={16} />
+              ) : (
+                <ChevronRight size={16} />
+              )
             ) : (
-              <ChevronRight size={16} />
+              <span className="w-4 inline-block" />
             )}
-          </span>
-        )}
-        {!hasChildren && <span className="w-5 flex-shrink-0" />}
+          </button>
 
-        <div className="flex-1 min-w-0">
-          <div className="flex items-baseline gap-2">
+          {/* Label and heading */}
+          <div className="flex-1 min-w-0 flex items-baseline gap-2">
             <span className={`font-medium text-sm ${
               node.level === 'title' ? 'text-teal-700' :
               node.level === 'chapter' ? 'text-slate-700' :
@@ -90,29 +99,19 @@ export default function StructureNavigator({ className = '' }: StructureNavigato
               {node.heading}
             </span>
           </div>
-        </div>
-      </>
-    );
 
-    return (
-      <div key={node.id} className="select-none">
-        {isSection ? (
-          <Link
-            href={`/section/${node.id}`}
-            className="flex items-start py-1.5 px-2 hover:bg-teal-50 rounded-sm group transition-colors"
-            style={{ paddingLeft }}
-          >
-            {content}
-          </Link>
-        ) : (
-          <div
-            className="flex items-start py-1.5 px-2 hover:bg-slate-50 rounded-sm cursor-pointer group transition-colors"
-            style={{ paddingLeft }}
-            onClick={() => hasChildren && toggleExpanded(node.id)}
-          >
-            {content}
-          </div>
-        )}
+          {/* View link for sections */}
+          {isSection && (
+            <Link
+              href={`/section/${node.id}`}
+              className="flex-shrink-0 ml-2 px-2 py-0.5 text-xs font-medium text-teal-700
+                         hover:bg-teal-100 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={(e) => e.stopPropagation()}
+            >
+              View →
+            </Link>
+          )}
+        </div>
 
         {hasChildren && isExpanded && (
           <div>
