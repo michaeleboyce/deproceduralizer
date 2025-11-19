@@ -1,4 +1,4 @@
-.PHONY: help bootstrap pipeline-setup pipeline-subset pipeline-full db-create db-load-subset db-load-full web-dev web-build clean
+.PHONY: help bootstrap pipeline-setup pipeline-small pipeline-medium pipeline-large db-load-small db-load-medium db-load-large web-dev web-build clean clean-state status quick-small quick-medium quick-large
 
 # Default target - show help
 help:
@@ -9,20 +9,28 @@ help:
 	@echo "  make pipeline-setup     - Set up Python environment"
 	@echo ""
 	@echo "Track A - Pipeline:"
-	@echo "  make pipeline-subset    - Run pipeline on subset data"
-	@echo "  make pipeline-full      - Run pipeline on full DC Code corpus"
+	@echo "  make pipeline-small     - Run pipeline on small corpus (Titles 1-2)"
+	@echo "  make pipeline-medium    - Run pipeline on medium corpus (Titles 1-10)"
+	@echo "  make pipeline-large     - Run pipeline on large corpus (all ~50 titles)"
 	@echo ""
 	@echo "Track B - Database:"
-	@echo "  make db-create          - Create database tables"
-	@echo "  make db-load-subset     - Load subset data to database"
-	@echo "  make db-load-full       - Load full corpus data to database"
+	@echo "  make db-load-small      - Load small corpus data to database"
+	@echo "  make db-load-medium     - Load medium corpus data to database"
+	@echo "  make db-load-large      - Load large corpus data to database"
 	@echo ""
 	@echo "Track C - Web:"
 	@echo "  make web-dev            - Start Next.js development server"
 	@echo "  make web-build          - Build Next.js app for production"
 	@echo ""
+	@echo "Quick Workflows:"
+	@echo "  make quick-small        - Run pipeline + load database (small)"
+	@echo "  make quick-medium       - Run pipeline + load database (medium)"
+	@echo "  make quick-large        - Run pipeline + load database (large)"
+	@echo ""
 	@echo "Utilities:"
-	@echo "  make clean              - Remove temporary files and state"
+	@echo "  make status             - Show pipeline and database status"
+	@echo "  make clean              - Remove Python cache files"
+	@echo "  make clean-state        - Remove pipeline checkpoints"
 
 # Bootstrap entire project
 bootstrap: pipeline-setup db-create
@@ -43,52 +51,39 @@ pipeline-setup:
 	@echo "✅ Python environment ready"
 	@echo "Activate with: source .venv/bin/activate"
 
-# Track A - Run pipeline on subset
-pipeline-subset:
-	@echo "Running pipeline on subset data..."
-	./scripts/run_all_subset.sh
+# Track A - Run pipeline on small corpus
+pipeline-small:
+	./scripts/run-pipeline.sh --corpus=small
 
-# Track A - Run pipeline on full corpus
-pipeline-full:
-	@echo "Running pipeline on full DC Code corpus..."
-	./scripts/run_all_full.sh
+# Track A - Run pipeline on medium corpus
+pipeline-medium:
+	./scripts/run-pipeline.sh --corpus=medium
 
-# Track B - Create database tables
-db-create:
-	@if [ -z "$$DATABASE_URL" ]; then \
-		echo "❌ ERROR: DATABASE_URL not set. Copy .env.example to .env and fill it in."; \
-		exit 1; \
-	fi
-	@echo "Creating database tables..."
-	psql "$$DATABASE_URL" -f dbtools/create_tables.sql
-	@echo "✅ Database tables created"
+# Track A - Run pipeline on large corpus
+pipeline-large:
+	./scripts/run-pipeline.sh --corpus=large
 
-# Track B - Load subset data
-db-load-subset:
-	@if [ -z "$$DATABASE_URL" ]; then \
-		echo "❌ ERROR: DATABASE_URL not set"; \
-		exit 1; \
-	fi
-	@echo "Loading subset data to database..."
-	@if [ -f data/outputs/sections_subset.ndjson ]; then \
-		. .venv/bin/activate && python dbtools/load_sections.py --input data/outputs/sections_subset.ndjson; \
-	else \
-		echo "⚠️  No sections_subset.ndjson found. Run 'make pipeline-subset' first."; \
-	fi
+# Track B - Load small corpus data
+db-load-small:
+	./scripts/load-database.sh --corpus=small
 
-# Track B - Load full corpus data
-db-load-full:
-	@if [ -z "$$DATABASE_URL" ]; then \
-		echo "❌ ERROR: DATABASE_URL not set"; \
-		exit 1; \
-	fi
-	@echo "Loading full corpus data to database..."
-	@echo "This will take a while. All loaders support resume from checkpoints."
-	@if [ -f data/outputs/sections.ndjson ]; then \
-		. .venv/bin/activate && python dbtools/load_sections.py --input data/outputs/sections.ndjson; \
-	else \
-		echo "⚠️  No sections.ndjson found. Run 'make pipeline-full' first."; \
-	fi
+# Track B - Load medium corpus data
+db-load-medium:
+	./scripts/load-database.sh --corpus=medium
+
+# Track B - Load large corpus data
+db-load-large:
+	./scripts/load-database.sh --corpus=large
+
+# Quick workflows - pipeline + database in one command
+quick-small: pipeline-small db-load-small
+	@echo "✅ Small corpus pipeline + database load complete"
+
+quick-medium: pipeline-medium db-load-medium
+	@echo "✅ Medium corpus pipeline + database load complete"
+
+quick-large: pipeline-large db-load-large
+	@echo "✅ Large corpus pipeline + database load complete"
 
 # Track C - Development server
 web-dev:
@@ -106,12 +101,17 @@ web-build:
 	fi
 	cd apps/web && pnpm build
 
-# Clean temporary files
+# Utilities - Clean Python cache files
 clean:
-	@echo "Cleaning temporary files..."
-	find . -name "*.state" -type f -delete
-	find . -name "*.ckpt" -type f -delete
-	find . -name "*.checkpoint" -type f -delete
+	@echo "Cleaning Python cache files..."
 	find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 	find . -name "*.pyc" -type f -delete
 	@echo "✅ Cleaned"
+
+# Utilities - Clean pipeline checkpoints
+clean-state:
+	./scripts/clean-state.sh
+
+# Utilities - Show pipeline and database status
+status:
+	./scripts/status.sh

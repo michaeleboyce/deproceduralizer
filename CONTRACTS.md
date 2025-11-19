@@ -212,6 +212,43 @@ dc-title-1 (parent_id: null, level: title)
 
 ---
 
+### obligations_enhanced.ndjson
+
+**Producer**: `pipeline/35_llm_obligations.py`
+**Consumer**: `dbtools/load_obligations_enhanced.py`
+**Location**: `data/outputs/obligations_enhanced.ndjson` or `data/outputs/obligations_enhanced_subset.ndjson`
+
+```json
+{
+  "jurisdiction": "dc",
+  "section_id": "dc-1-101",
+  "category": "deadline",
+  "phrase": "within 30 days",
+  "value": 30,
+  "unit": "days"
+}
+```
+
+**Field Specifications**:
+- `jurisdiction` (string, required): Jurisdiction code (e.g., "dc", "ca", "ny")
+- `section_id` (string, required): Section containing the obligation
+- `category` (string, required): Type of obligation (deadline, constraint, allocation, penalty)
+- `phrase` (string, required): Exact text phrase from section (5-500 characters)
+- `value` (float, optional): Numeric value extracted (e.g., 30 for "30 days", 500 for "$500")
+- `unit` (string, optional): Unit of measurement (days, dollars, percent, members, etc.)
+
+**Notes**:
+- Replaces separate `deadlines.ndjson` and `amounts.ndjson` with unified obligation model
+- Uses LLM classification for accurate categorization
+- Two-stage approach: regex filter for candidates, then LLM classification
+- Categories:
+  - `deadline`: Time-based requirements (e.g., "within 30 days", "annual report")
+  - `constraint`: Numeric limits or conditions (e.g., "at least 5 members", "not more than 100")
+  - `allocation`: Budget/resource allocations (e.g., "$1 million appropriated")
+  - `penalty`: Fines, fees, or penalties (e.g., "$500 fine", "imprisonment up to 90 days")
+
+---
+
 ### similarities.ndjson
 
 **Producer**: `pipeline/40_similarities.py`
