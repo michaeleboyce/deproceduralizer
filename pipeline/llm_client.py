@@ -5,12 +5,12 @@ Unified LLM client wrapper with dual cascade strategies.
 This module provides a single interface for calling LLMs with Pydantic validation:
 - Gemini API (primary, with per-model rate limiting and cascade)
 - Groq API (secondary, OpenAI-compatible, 9 models)
-- OpenRouter API (tertiary, OpenAI-compatible with free tier models: DeepSeek R1, DeepSeek V3, Llama 3.3 70B, Qwen3 235B, Qwen 2.5 72B)
+- OpenRouter API (tertiary, OpenAI-compatible with 11 free tier models including DeepSeek R1, Qwen3 Coder 480B, Hermes 405B, Gemma 3, and more)
 - Ollama (final fallback, local)
 
 Cascade Strategies:
 - "simple" (default): Gemini → Ollama (preserves Groq/OpenRouter rate limits)
-- "extended": Gemini → Groq (9 models) → OpenRouter (5 free models with sticky sessions) → Ollama (maximum resilience)
+- "extended": Gemini → Groq (9 models) → OpenRouter (11 free models, max 2 concurrent) → Ollama (maximum resilience)
 
 Key features:
 - Automatic validation and retry via Pydantic
@@ -104,12 +104,28 @@ GROQ_MODELS = [
 # OpenRouter model configurations (OpenAI-compatible API with provider routing)
 # Using free tier models - strongest available at $0 cost
 # Conservative rate limits (can be adjusted based on OpenRouter's actual limits)
+# Ordered by capability: largest/strongest models first
 OPENROUTER_MODELS = [
+    # Largest models (400B+ parameters)
+    {"name": "qwen/qwen3-coder:free", "rpm": 30, "rpd": 1000, "tpm": 262000},  # 480B MoE model
+    {"name": "nousresearch/hermes-3-llama-3.1-405b:free", "rpm": 30, "rpd": 1000, "tpm": 131072},  # 405B model
+
+    # High-quality reasoning models (DeepSeek R1 family)
     {"name": "deepseek/deepseek-r1:free", "rpm": 30, "rpd": 1000, "tpm": 163840},
+    {"name": "deepseek/deepseek-r1-0528:free", "rpm": 30, "rpd": 1000, "tpm": 163840},
     {"name": "deepseek/deepseek-chat-v3-0324:free", "rpm": 30, "rpd": 1000, "tpm": 163840},
+
+    # Strong general models (70B-235B)
+    {"name": "qwen/qwen3-235b-a22b:free", "rpm": 30, "rpd": 1000, "tpm": 40960},  # 235B model
     {"name": "meta-llama/llama-3.3-70b-instruct:free", "rpm": 30, "rpd": 1000, "tpm": 131072},
-    {"name": "qwen/qwen3-235b-a22b:free", "rpm": 30, "rpd": 1000, "tpm": 40960},
     {"name": "qwen/qwen-2.5-72b-instruct:free", "rpm": 30, "rpd": 1000, "tpm": 32768},
+
+    # Google Gemma models (27B-12B)
+    {"name": "google/gemma-3-27b-it:free", "rpm": 30, "rpd": 1000, "tpm": 131072},
+    {"name": "google/gemma-3-12b-it:free", "rpm": 30, "rpd": 1000, "tpm": 32768},
+
+    # Mistral models
+    {"name": "mistralai/mistral-small-3.2-24b-instruct:free", "rpm": 30, "rpd": 1000, "tpm": 131072},
 ]
 
 OLLAMA_HOST = "http://localhost:11434"
@@ -118,7 +134,8 @@ OLLAMA_MODEL = "phi4-mini"
 # Rate limiting configuration
 RPM_WINDOW = 60  # seconds
 GEMINI_CALL_DELAY = 0.1  # seconds between Gemini calls to avoid rate limits
-GEMINI_RETRY_INTERVAL = 600  # seconds (10 minutes) before retrying Gemini after fallback
+GEMINI_RETRY_INTERVAL = 180  # seconds (3 minutes) before retrying Gemini after fallback
+MAX_PARALLEL_CALLS = 2  # Maximum concurrent API calls when trying models in parallel
 
 
 class RateLimiter:
@@ -197,15 +214,17 @@ class LLMClient:
     - "extended": Gemini → Groq → Ollama
     """
 
-    def __init__(self, cascade_strategy: Optional[str] = None):
+    def __init__(self, cascade_strategy: Optional[str] = None, parallel_execution: bool = False):
         """
         Initialize LLM client with rate limiter and stats tracking.
 
         Args:
             cascade_strategy: "simple" or "extended" (defaults to env var LLM_CASCADE_STRATEGY)
+            parallel_execution: Whether to try models in parallel within tiers (defaults to False)
         """
         self.rate_limiter = RateLimiter()
         self.cascade_strategy = (cascade_strategy or CASCADE_STRATEGY).lower()
+        self.parallel_execution = parallel_execution or PARALLEL_EXECUTION
 
         # Validate strategy
         if self.cascade_strategy not in ["simple", "extended"]:
@@ -874,10 +893,11 @@ Return only the JSON object, nothing else."""
         if not models:
             return None
 
-        logger.info(f"⚡ Trying {len(models)} {tier_name} models in parallel...")
+        max_workers = min(MAX_PARALLEL_CALLS, len(models))
+        logger.info(f"⚡ Trying up to {max_workers} {tier_name} models at a time ({len(models)} total)...")
 
-        # Use ThreadPoolExecutor to call all models concurrently
-        with ThreadPoolExecutor(max_workers=len(models)) as executor:
+        # Use ThreadPoolExecutor to call models with limited concurrency
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all model calls
             futures = {
                 executor.submit(self._try_model, model_config, prompt, response_model, tier_name): model_config
@@ -982,37 +1002,50 @@ Return only the JSON object, nothing else."""
 
             self.stats['last_gemini_attempt_time'] = time.time()
 
-            for model_config in GEMINI_MODELS:
-                model_name = model_config["name"]
-
-                # Check rate limits for this specific model
-                if not self.rate_limiter.wait_if_needed(model_config):
-                    logger.debug(f"{model_name} rate limited, trying next model")
-                    continue
-
-                # Log model switch if changing
-                self._log_model_switch(model_name, "Rate limited" if self.stats['current_model'] else "Initial")
-
-                self.stats['last_gemini_call_time'] = time.time()
-                result = self._call_gemini_with_instructor(prompt, response_model, model_name)
-
+            if self.parallel_execution:
+                # Parallel execution for Gemini
+                result = self._try_tier_parallel(GEMINI_MODELS, prompt, response_model, "gemini", section_id)
                 if result:
-                    self.rate_limiter.record_call(model_config)
-                    logger.debug(f"Successfully used {model_name}" + (f" for {section_id}" if section_id else ""))
-
-                    # Track call count
-                    self.stats['current_model_calls'] += 1
-                    self.stats['model_call_counts'][model_name] = self.stats['model_call_counts'].get(model_name, 0) + 1
-
+                    self.stats['last_gemini_call_time'] = time.time()
                     # Successfully used Gemini, clear fallback state
                     if using_fallback or using_groq_fallback:
                         logger.info("✓ Gemini is working again, resuming normal operation")
                         self.stats['using_fallback'] = False
                         self.stats['using_groq_fallback'] = False
+                    return result
+            else:
+                # Sequential execution for Gemini
+                for model_config in GEMINI_MODELS:
+                    model_name = model_config["name"]
 
-                    return LLMResponse(data=result, model_used=model_name)
-                else:
-                    logger.debug(f"Failed with {model_name}, trying next model")
+                    # Check rate limits for this specific model
+                    if not self.rate_limiter.wait_if_needed(model_config):
+                        logger.debug(f"{model_name} rate limited, trying next model")
+                        continue
+
+                    # Log model switch if changing
+                    self._log_model_switch(model_name, "Rate limited" if self.stats['current_model'] else "Initial")
+
+                    self.stats['last_gemini_call_time'] = time.time()
+                    result = self._call_gemini_with_instructor(prompt, response_model, model_name)
+
+                    if result:
+                        self.rate_limiter.record_call(model_config)
+                        logger.debug(f"Successfully used {model_name}" + (f" for {section_id}" if section_id else ""))
+
+                        # Track call count
+                        self.stats['current_model_calls'] += 1
+                        self.stats['model_call_counts'][model_name] = self.stats['model_call_counts'].get(model_name, 0) + 1
+
+                        # Successfully used Gemini, clear fallback state
+                        if using_fallback or using_groq_fallback:
+                            logger.info("✓ Gemini is working again, resuming normal operation")
+                            self.stats['using_fallback'] = False
+                            self.stats['using_groq_fallback'] = False
+
+                        return LLMResponse(data=result, model_used=model_name)
+                    else:
+                        logger.debug(f"Failed with {model_name}, trying next model")
 
         # Gemini tier exhausted
         self.stats['last_gemini_fail_time'] = current_time
@@ -1022,83 +1055,109 @@ Return only the JSON object, nothing else."""
         if self.cascade_strategy == "extended" and GROQ_API_KEY and not in_sticky_session:
             self.stats['last_groq_attempt_time'] = current_time
 
-            for i, model_config in enumerate(GROQ_MODELS):
-                model_name = model_config["name"]
-
-                # Check rate limits for this specific model
-                if not self.rate_limiter.wait_if_needed(model_config):
-                    logger.debug(f"{model_name} rate limited, trying next model")
-                    continue
-
-                # Log model switch if changing
+            if self.parallel_execution:
+                # Parallel execution for Groq
                 if not self.stats.get('groq_fallback_logged'):
-                    logger.info(f"⚡ Gemini exhausted, trying Groq tier")
+                    logger.info(f"⚡ Gemini exhausted, trying Groq tier (Parallel)")
                     self.stats['groq_fallback_logged'] = True
-
-                self._log_model_switch(model_name, "Gemini exhausted")
-
-                result = self._call_groq_with_instructor(prompt, response_model, model_name)
-
+                
+                result = self._try_tier_parallel(GROQ_MODELS, prompt, response_model, "groq", section_id)
                 if result:
-                    self.rate_limiter.record_call(model_config)
-                    logger.debug(f"Successfully used Groq {model_name}" + (f" for {section_id}" if section_id else ""))
-
-                    # Track call count
-                    self.stats['current_model_calls'] += 1
-                    self.stats['model_call_counts'][model_name] = self.stats['model_call_counts'].get(model_name, 0) + 1
                     self.stats['using_groq_fallback'] = True
+                    return result
+            else:
+                # Sequential execution for Groq
+                for i, model_config in enumerate(GROQ_MODELS):
+                    model_name = model_config["name"]
 
-                    return LLMResponse(data=result, model_used=model_name)
-                else:
-                    logger.debug(f"Failed with Groq {model_name}, trying next model")
-                    # Add delay between failed Groq attempts to avoid rapid cycling
-                    if i < len(GROQ_MODELS) - 1:  # Don't delay after the last model
-                        time.sleep(0.5)
+                    # Check rate limits for this specific model
+                    if not self.rate_limiter.wait_if_needed(model_config):
+                        logger.debug(f"{model_name} rate limited, trying next model")
+                        continue
+
+                    # Log model switch if changing
+                    if not self.stats.get('groq_fallback_logged'):
+                        logger.info(f"⚡ Gemini exhausted, trying Groq tier")
+                        self.stats['groq_fallback_logged'] = True
+
+                    self._log_model_switch(model_name, "Gemini exhausted")
+
+                    result = self._call_groq_with_instructor(prompt, response_model, model_name)
+
+                    if result:
+                        self.rate_limiter.record_call(model_config)
+                        logger.debug(f"Successfully used Groq {model_name}" + (f" for {section_id}" if section_id else ""))
+
+                        # Track call count
+                        self.stats['current_model_calls'] += 1
+                        self.stats['model_call_counts'][model_name] = self.stats['model_call_counts'].get(model_name, 0) + 1
+                        self.stats['using_groq_fallback'] = True
+
+                        return LLMResponse(data=result, model_used=model_name)
+                    else:
+                        logger.debug(f"Failed with Groq {model_name}, trying next model")
+                        # Add delay between failed Groq attempts to avoid rapid cycling
+                        if i < len(GROQ_MODELS) - 1:  # Don't delay after the last model
+                            time.sleep(0.5)
 
         # === TIER 3: Try OpenRouter models (extended strategy only) ===
         if self.cascade_strategy == "extended" and OPENROUTER_API_KEY:
             self.stats['last_openrouter_attempt_time'] = current_time
 
-            for i, model_config in enumerate(OPENROUTER_MODELS):
-                model_name = model_config["name"]
-
-                # Check rate limits for this specific model
-                if not self.rate_limiter.wait_if_needed(model_config):
-                    logger.debug(f"{model_name} rate limited, trying next model")
-                    continue
-
-                # Log model switch if changing
+            if self.parallel_execution:
+                # Parallel execution for OpenRouter
                 if not self.stats.get('openrouter_fallback_logged'):
-                    logger.info(f"⚡ Groq exhausted, trying OpenRouter tier (with sticky sessions)")
+                    logger.info(f"⚡ Groq exhausted, trying OpenRouter tier (Parallel)")
                     self.stats['openrouter_fallback_logged'] = True
-
-                self._log_model_switch(model_name, "Groq exhausted")
-
-                result = self._call_openrouter_with_instructor(prompt, response_model, model_name)
-
+                
+                result = self._try_tier_parallel(OPENROUTER_MODELS, prompt, response_model, "openrouter", section_id)
                 if result:
-                    self.rate_limiter.record_call(model_config)
-                    logger.debug(f"Successfully used OpenRouter {model_name}" + (f" for {section_id}" if section_id else ""))
-
-                    # Track call count
-                    self.stats['current_model_calls'] += 1
-                    self.stats['model_call_counts'][model_name] = self.stats['model_call_counts'].get(model_name, 0) + 1
                     self.stats['using_openrouter_fallback'] = True
-
                     # Increment sticky session counter
                     self.stats['openrouter_sticky_calls'] += 1
+                    return result
+            else:
+                # Sequential execution for OpenRouter
+                for i, model_config in enumerate(OPENROUTER_MODELS):
+                    model_name = model_config["name"]
 
-                    # Log sticky session status
-                    sticky_remaining = self.stats['openrouter_sticky_target'] - self.stats['openrouter_sticky_calls']
-                    if sticky_remaining > 0:
-                        logger.debug(f"OpenRouter sticky session: {self.stats['openrouter_sticky_calls']}/{self.stats['openrouter_sticky_target']} calls (will retry higher tiers in {sticky_remaining} calls)")
+                    # Check rate limits for this specific model
+                    if not self.rate_limiter.wait_if_needed(model_config):
+                        logger.debug(f"{model_name} rate limited, trying next model")
+                        continue
 
-                    return LLMResponse(data=result, model_used=model_name)
-                else:
-                    logger.debug(f"Failed with OpenRouter {model_name}, trying next model")
-                    # Add delay between failed OpenRouter attempts to avoid rapid cycling
-                    if i < len(OPENROUTER_MODELS) - 1:  # Don't delay after the last model
-                        time.sleep(0.5)
+                    # Log model switch if changing
+                    if not self.stats.get('openrouter_fallback_logged'):
+                        logger.info(f"⚡ Groq exhausted, trying OpenRouter tier (with sticky sessions)")
+                        self.stats['openrouter_fallback_logged'] = True
+
+                    self._log_model_switch(model_name, "Groq exhausted")
+
+                    result = self._call_openrouter_with_instructor(prompt, response_model, model_name)
+
+                    if result:
+                        self.rate_limiter.record_call(model_config)
+                        logger.debug(f"Successfully used OpenRouter {model_name}" + (f" for {section_id}" if section_id else ""))
+
+                        # Track call count
+                        self.stats['current_model_calls'] += 1
+                        self.stats['model_call_counts'][model_name] = self.stats['model_call_counts'].get(model_name, 0) + 1
+                        self.stats['using_openrouter_fallback'] = True
+
+                        # Increment sticky session counter
+                        self.stats['openrouter_sticky_calls'] += 1
+
+                        # Log sticky session status
+                        sticky_remaining = self.stats['openrouter_sticky_target'] - self.stats['openrouter_sticky_calls']
+                        if sticky_remaining > 0:
+                            logger.debug(f"OpenRouter sticky session: {self.stats['openrouter_sticky_calls']}/{self.stats['openrouter_sticky_target']} calls (will retry higher tiers in {sticky_remaining} calls)")
+
+                        return LLMResponse(data=result, model_used=model_name)
+                    else:
+                        logger.debug(f"Failed with OpenRouter {model_name}, trying next model")
+                        # Add delay between failed OpenRouter attempts to avoid rapid cycling
+                        if i < len(OPENROUTER_MODELS) - 1:  # Don't delay after the last model
+                            time.sleep(0.5)
 
         # === TIER 4: Fallback to Ollama ===
         if not self.stats.get('fallback_to_ollama_logged'):
@@ -1152,6 +1211,7 @@ Return only the JSON object, nothing else."""
         lines.append("LLM USAGE STATISTICS")
         lines.append("=" * 60)
         lines.append(f"Cascade Strategy: {self.stats['cascade_strategy']}")
+        lines.append(f"Parallel Execution: {'Enabled' if self.parallel_execution else 'Disabled'}")
         lines.append(f"Session Duration: {session_minutes}m {session_seconds}s")
         lines.append("")
 
