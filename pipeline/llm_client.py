@@ -75,6 +75,9 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 CASCADE_STRATEGY = os.getenv("LLM_CASCADE_STRATEGY", "extended")  # "simple" or "extended"
 PARALLEL_EXECUTION = os.getenv("LLM_PARALLEL_EXECUTION", "false").lower() == "true"  # Try models in parallel within tiers
 
+# Global lock for Ollama calls (ensures only one local inference at a time across all workers)
+_OLLAMA_LOCK = Lock()
+
 # Model configurations with rate limits (RPM, RPD, TPM)
 # Ordered by model version: 2.5 Flash → 2.5 Flash-Lite → 2.0 Flash → 2.0 Flash-Lite
 GEMINI_MODELS = [
@@ -516,6 +519,9 @@ Return only the JSON object, nothing else."""
         """
         Call Ollama API with Instructor for validated responses.
 
+        Uses a global lock to ensure only one Ollama inference runs at a time,
+        preventing resource exhaustion when multiple workers call Ollama concurrently.
+
         Args:
             prompt: The prompt to send to the LLM
             response_model: Pydantic model class for validation
@@ -525,12 +531,14 @@ Return only the JSON object, nothing else."""
         Returns:
             Validated Pydantic model instance or None if failed
         """
-        try:
-            # Similar approach for Ollama
-            schema_json = response_model.model_json_schema()
-            schema_str = str(schema_json)
+        # Acquire global lock to serialize Ollama calls across all worker threads
+        with _OLLAMA_LOCK:
+            try:
+                # Similar approach for Ollama
+                schema_json = response_model.model_json_schema()
+                schema_str = str(schema_json)
 
-            structured_prompt = f"""{prompt}
+                structured_prompt = f"""{prompt}
 
 IMPORTANT: Respond with VALID JSON ONLY (no markdown, no explanations) that matches this exact schema:
 {schema_str}
@@ -538,78 +546,78 @@ IMPORTANT: Respond with VALID JSON ONLY (no markdown, no explanations) that matc
 Ensure the response is a JSON OBJECT, not a list.
 Return only the JSON object, nothing else."""
 
-            # Retry loop for validation errors
-            for attempt in range(max_retries):
-                response = requests.post(
-                    f"{OLLAMA_HOST}/api/generate",
-                    json={
-                        "model": model_name,
-                        "prompt": structured_prompt,
-                        "stream": False,
-                        "options": {
-                            "temperature": 0.1,
-                            "num_ctx": 4096
-                        }
-                    },
-                    timeout=90
-                )
-                response.raise_for_status()
-                data = response.json()
+                # Retry loop for validation errors
+                for attempt in range(max_retries):
+                    response = requests.post(
+                        f"{OLLAMA_HOST}/api/generate",
+                        json={
+                            "model": model_name,
+                            "prompt": structured_prompt,
+                            "stream": False,
+                            "options": {
+                                "temperature": 0.1,
+                                "num_ctx": 4096
+                            }
+                        },
+                        timeout=90
+                    )
+                    response.raise_for_status()
+                    data = response.json()
 
-                response_text = data.get("response", "")
+                    response_text = data.get("response", "")
 
-                # Try to parse and validate with Pydantic
-                try:
-                    import re
-                    import json
-
-                    # Try direct parse
+                    # Try to parse and validate with Pydantic
                     try:
-                        json_data = json.loads(response_text.strip())
-                    except json.JSONDecodeError:
-                        # Extract from markdown block
-                        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
-                        if json_match:
-                            json_data = json.loads(json_match.group(1))
-                        else:
-                            # Find first {...} object
-                            obj_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text, re.DOTALL)
-                            if obj_match:
-                                json_data = json.loads(obj_match.group(0))
+                        import re
+                        import json
+
+                        # Try direct parse
+                        try:
+                            json_data = json.loads(response_text.strip())
+                        except json.JSONDecodeError:
+                            # Extract from markdown block
+                            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+                            if json_match:
+                                json_data = json.loads(json_match.group(1))
                             else:
-                                # Fallback: try to find a list [...] if we can't find an object
-                                list_match = re.search(r'\[.*\]', response_text, re.DOTALL)
-                                if list_match:
-                                    json_data = json.loads(list_match.group(0))
+                                # Find first {...} object
+                                obj_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text, re.DOTALL)
+                                if obj_match:
+                                    json_data = json.loads(obj_match.group(0))
                                 else:
-                                    raise json.JSONDecodeError("No JSON found", response_text, 0)
+                                    # Fallback: try to find a list [...] if we can't find an object
+                                    list_match = re.search(r'\[.*\]', response_text, re.DOTALL)
+                                    if list_match:
+                                        json_data = json.loads(list_match.group(0))
+                                    else:
+                                        raise json.JSONDecodeError("No JSON found", response_text, 0)
 
-                    # Attempt heuristic repair
-                    json_data = self._repair_json_structure(json_data, response_model)
+                        # Attempt heuristic repair
+                        json_data = self._repair_json_structure(json_data, response_model)
 
-                    # Validate with Pydantic
-                    validated = response_model.model_validate(json_data)
-                    return validated
+                        # Validate with Pydantic
+                        validated = response_model.model_validate(json_data)
+                        return validated
 
-                except Exception as e:
-                    logger.debug(f"Validation error (attempt {attempt + 1}/{max_retries}): {e}")
-                    if attempt == max_retries - 1:
-                        logger.error(f"Failed to validate after {max_retries} attempts with Ollama. Error: {str(e)[:200]}...")
-                        return None
-                    # Continue to next retry
-                    continue
+                    except Exception as e:
+                        logger.debug(f"Validation error (attempt {attempt + 1}/{max_retries}): {e}")
+                        if attempt == max_retries - 1:
+                            logger.error(f"Failed to validate after {max_retries} attempts with Ollama. Error: {str(e)[:200]}...")
+                            return None
+                        # Continue to next retry
+                        continue
 
-            return None
+                return None
 
-        except requests.exceptions.Timeout:
-            logger.debug(f"Timeout calling Ollama")
-            return None
-        except requests.exceptions.RequestException as e:
-            logger.debug(f"Error calling Ollama API: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"Unexpected error with Ollama: {e}")
-            return None
+            except requests.exceptions.Timeout:
+                logger.debug(f"Timeout calling Ollama")
+                return None
+            except requests.exceptions.RequestException as e:
+                logger.debug(f"Error calling Ollama API: {e}")
+                return None
+            except Exception as e:
+                logger.error(f"Unexpected error with Ollama: {e}")
+                return None
 
     def _call_groq_with_instructor(
         self,
