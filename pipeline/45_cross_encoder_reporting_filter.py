@@ -147,7 +147,7 @@ def filter_candidates(
                 # Pass through to LLM stage
                 writer.write({
                     "id": section_id,
-                    "text": text_plain,
+                    "text_plain": text_plain,  # Use text_plain to match reporting script expectations
                     "cross_encoder_score": score,
                 })
                 sections_passed += 1
