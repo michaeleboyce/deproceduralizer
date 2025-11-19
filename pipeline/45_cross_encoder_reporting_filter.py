@@ -87,11 +87,11 @@ def score_section(
     # Create pairs: (text, indicator) for each indicator
     pairs = [(text[:512], indicator) for indicator in indicators]
 
-    # Get scores from cross-encoder (returns logits, normalized to 0-1)
+    # Get scores from cross-encoder (returns numpy array)
     scores = cross_encoder.predict(pairs, convert_to_numpy=True)
 
-    # Return max score across all indicators
-    return float(max(scores))
+    # Return max score across all indicators (use numpy max)
+    return float(scores.max())
 
 
 def filter_candidates(
