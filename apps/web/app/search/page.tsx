@@ -49,6 +49,8 @@ function SearchPageContent() {
   const [showLegend, setShowLegend] = useState(false);
   const [availableTitles, setAvailableTitles] = useState<string[]>([]);
   const [availableChapters, setAvailableChapters] = useState<string[]>([]);
+  const [availableObligationCategories, setAvailableObligationCategories] = useState<string[]>([]);
+  const [selectedObligationCategories, setSelectedObligationCategories] = useState<string[]>([]);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -58,6 +60,7 @@ function SearchPageContent() {
   // Load filter options on mount
   useEffect(() => {
     loadTitles();
+    loadObligationCategories();
   }, []);
 
   // Load chapters when title changes
@@ -80,9 +83,10 @@ function SearchPageContent() {
     const urlMinSimilarity = parseInt(searchParams.get("minSimilarity") || "70", 10);
     const urlMaxSimilarity = parseInt(searchParams.get("maxSimilarity") || "100", 10);
     const urlSimilarityClassification = searchParams.get("similarityClassification") || "";
+    const urlObligationCategories = searchParams.get("obligationCategory")?.split(",").filter(Boolean) || [];
     const urlPage = parseInt(searchParams.get("page") || "1", 10);
 
-    if (urlQuery || urlTitle || urlChapter || urlHasReporting || urlHasSimilar || urlSimilarityClassification) {
+    if (urlQuery || urlTitle || urlChapter || urlHasReporting || urlHasSimilar || urlSimilarityClassification || urlObligationCategories.length > 0) {
       setQuery(urlQuery);
       setSelectedTitle(urlTitle);
       setSelectedChapter(urlChapter);
@@ -91,8 +95,9 @@ function SearchPageContent() {
       setMinSimilarity(urlMinSimilarity);
       setMaxSimilarity(urlMaxSimilarity);
       setSimilarityClassification(urlSimilarityClassification);
+      setSelectedObligationCategories(urlObligationCategories);
       setCurrentPage(urlPage);
-      performSearch(urlQuery, urlTitle, urlChapter, urlHasReporting, urlHasSimilar, urlMinSimilarity, urlMaxSimilarity, urlSimilarityClassification, urlPage);
+      performSearch(urlQuery, urlTitle, urlChapter, urlHasReporting, urlHasSimilar, urlMinSimilarity, urlMaxSimilarity, urlSimilarityClassification, urlObligationCategories, urlPage);
     }
   }, [searchParams]);
 
@@ -118,6 +123,16 @@ function SearchPageContent() {
     }
   };
 
+  const loadObligationCategories = async () => {
+    try {
+      const response = await fetch("/api/filters/obligations");
+      const data = await response.json();
+      setAvailableObligationCategories(data.categories || []);
+    } catch (err) {
+      console.error("Failed to load obligation categories:", err);
+    }
+  };
+
   const performSearch = async (
     searchQuery: string,
     title: string = selectedTitle,
@@ -127,6 +142,7 @@ function SearchPageContent() {
     minSim: number = minSimilarity,
     maxSim: number = maxSimilarity,
     simClassification: string = similarityClassification,
+    obligationCats: string[] = selectedObligationCategories,
     page: number = currentPage
   ) => {
     setLoading(true);
@@ -143,6 +159,7 @@ function SearchPageContent() {
       if (similar && minSim > 70) params.append("minSimilarity", (minSim / 100).toString());
       if (similar && maxSim < 100) params.append("maxSimilarity", (maxSim / 100).toString());
       if (simClassification) params.append("similarityClassification", simClassification);
+      if (obligationCats && obligationCats.length > 0) params.append("obligationCategory", obligationCats.join(","));
       params.append("page", page.toString());
 
       const response = await fetch(`/api/search?${params.toString()}`);
@@ -167,21 +184,21 @@ function SearchPageContent() {
   const handleSearch = (e: FormEvent) => {
     e.preventDefault();
     setCurrentPage(1);
-    updateURL(query, selectedTitle, selectedChapter, hasReporting, hasSimilar, minSimilarity, maxSimilarity, similarityClassification, 1);
+    updateURL(query, selectedTitle, selectedChapter, hasReporting, hasSimilar, minSimilarity, maxSimilarity, similarityClassification, selectedObligationCategories, 1);
   };
 
   const handleFilterChange = () => {
     setCurrentPage(1);
-    updateURL(query, selectedTitle, selectedChapter, hasReporting, hasSimilar, minSimilarity, maxSimilarity, similarityClassification, 1);
+    updateURL(query, selectedTitle, selectedChapter, hasReporting, hasSimilar, minSimilarity, maxSimilarity, similarityClassification, selectedObligationCategories, 1);
   };
 
   const handlePageChange = (newPage: number) => {
     setCurrentPage(newPage);
-    updateURL(query, selectedTitle, selectedChapter, hasReporting, hasSimilar, minSimilarity, maxSimilarity, similarityClassification, newPage);
+    updateURL(query, selectedTitle, selectedChapter, hasReporting, hasSimilar, minSimilarity, maxSimilarity, similarityClassification, selectedObligationCategories, newPage);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const updateURL = (q: string, title: string, chapter: string, reporting: boolean, similar: boolean, minSim: number, maxSim: number, simClass: string, page: number) => {
+  const updateURL = (q: string, title: string, chapter: string, reporting: boolean, similar: boolean, minSim: number, maxSim: number, simClass: string, obligationCats: string[], page: number) => {
     const params = new URLSearchParams();
     if (q.trim()) params.append("q", q);
     if (title) params.append("title", title);
@@ -191,6 +208,7 @@ function SearchPageContent() {
     if (similar && minSim > 70) params.append("minSimilarity", minSim.toString());
     if (similar && maxSim < 100) params.append("maxSimilarity", maxSim.toString());
     if (simClass) params.append("similarityClassification", simClass);
+    if (obligationCats && obligationCats.length > 0) params.append("obligationCategory", obligationCats.join(","));
     if (page > 1) params.append("page", page.toString());
 
     router.push(`/search?${params.toString()}`);
@@ -204,11 +222,20 @@ function SearchPageContent() {
     setMinSimilarity(70);
     setMaxSimilarity(100);
     setSimilarityClassification("");
+    setSelectedObligationCategories([]);
     setCurrentPage(1);
-    updateURL(query, "", "", false, false, 70, 100, "", 1);
+    updateURL(query, "", "", false, false, 70, 100, "", [], 1);
   };
 
-  const hasActiveFilters = selectedTitle || selectedChapter || hasReporting || hasSimilar || similarityClassification;
+  const hasActiveFilters = selectedTitle || selectedChapter || hasReporting || hasSimilar || similarityClassification || selectedObligationCategories.length > 0;
+
+  const toggleObligationCategory = (category: string) => {
+    setSelectedObligationCategories(prev =>
+      prev.includes(category)
+        ? prev.filter(c => c !== category)
+        : [...prev, category]
+    );
+  };
 
   return (
     <>
@@ -443,6 +470,30 @@ function SearchPageContent() {
               )}
             </div>
 
+            {/* Obligation Category Filters Row */}
+            <div className="mt-4 pt-4 border-t border-slate-200">
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Obligation Categories
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {availableObligationCategories.map((category) => (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => toggleObligationCategory(category)}
+                    className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                      selectedObligationCategories.includes(category)
+                        ? "bg-teal-700 text-white border-teal-700"
+                        : "bg-white text-slate-700 border-slate-300 hover:border-teal-500"
+                    }`}
+                    disabled={loading}
+                  >
+                    {category}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="flex gap-2 items-end mt-4">
                 <button
                   type="button"
@@ -536,6 +587,21 @@ function SearchPageContent() {
                     </button>
                   </span>
                 )}
+                {selectedObligationCategories.map((category) => (
+                  <span
+                    key={category}
+                    className="inline-flex items-center gap-1.5 px-3 py-1
+                               bg-amber-100 text-amber-800 rounded-full text-sm font-medium capitalize"
+                  >
+                    {category}
+                    <button
+                      onClick={() => toggleObligationCategory(category)}
+                      className="hover:text-amber-900 text-lg leading-none"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
               </div>
             )}
           </div>

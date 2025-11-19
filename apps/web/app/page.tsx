@@ -27,6 +27,12 @@ export default function HomePage() {
             Reports →
           </Link>
           <Link
+            href="/dashboard/conflicts"
+            className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
+          >
+            Analysis →
+          </Link>
+          <Link
             href="/search"
             className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
           >

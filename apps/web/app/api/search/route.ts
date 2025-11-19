@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { sections, sectionSimilarities, sectionSimilarityClassifications } from "@/db/schema";
+import { sections, sectionSimilarities, sectionSimilarityClassifications, obligations } from "@/db/schema";
 import { sql, and, eq, SQL, gte, lte, or } from "drizzle-orm";
 
 /**
@@ -8,6 +8,7 @@ import { sql, and, eq, SQL, gte, lte, or } from "drizzle-orm";
  *
  * GET /api/search?query=term&title=Title+1&chapter=Chapter+1&page=1&limit=20
  *   &hasSimilar=true&minSimilarity=0.8&maxSimilarity=1.0&similarityClassification=duplicate
+ *   &obligationCategory=deadline,penalty
  *
  * Searches code sections using PostgreSQL full-text search with filters
  */
@@ -22,6 +23,7 @@ export async function GET(request: Request) {
     const minSimilarity = parseFloat(searchParams.get("minSimilarity") || "0.7");
     const maxSimilarity = parseFloat(searchParams.get("maxSimilarity") || "1.0");
     const similarityClassification = searchParams.get("similarityClassification");
+    const obligationCategories = searchParams.get("obligationCategory")?.split(",").filter(Boolean);
     const page = parseInt(searchParams.get("page") || "1", 10);
     const limit = parseInt(searchParams.get("limit") || "20", 10);
 
@@ -34,8 +36,11 @@ export async function GET(request: Request) {
     // Check if we need similarity filtering
     const needsSimilarityJoin = hasSimilar || minSimilarity > 0.7 || maxSimilarity < 1.0 || similarityClassification;
 
-    if (needsSimilarityJoin) {
-      // Complex query with similarity joins
+    // Check if we need obligations filtering
+    const needsObligationsJoin = obligationCategories && obligationCategories.length > 0;
+
+    if (needsSimilarityJoin || needsObligationsJoin) {
+      // Complex query with similarity and/or obligations joins
       const baseSql = sql`
         SELECT DISTINCT
           s.id,
@@ -45,17 +50,26 @@ export async function GET(request: Request) {
           s.title_label,
           s.chapter_label
         FROM sections s
-        INNER JOIN section_similarities sim ON (
-          sim.jurisdiction = ${jurisdiction}
-          AND (sim.section_a = s.id OR sim.section_b = s.id)
-          ${minSimilarity > 0.7 ? sql`AND sim.similarity >= ${minSimilarity}` : sql``}
-          ${maxSimilarity < 1.0 ? sql`AND sim.similarity <= ${maxSimilarity}` : sql``}
-        )
+        ${needsSimilarityJoin ? sql`
+          INNER JOIN section_similarities sim ON (
+            sim.jurisdiction = ${jurisdiction}
+            AND (sim.section_a = s.id OR sim.section_b = s.id)
+            ${minSimilarity > 0.7 ? sql`AND sim.similarity >= ${minSimilarity}` : sql``}
+            ${maxSimilarity < 1.0 ? sql`AND sim.similarity <= ${maxSimilarity}` : sql``}
+          )
+        ` : sql``}
         ${similarityClassification ? sql`
           INNER JOIN section_similarity_classifications cls ON (
             cls.jurisdiction = ${jurisdiction}
             AND cls.section_a = sim.section_a AND cls.section_b = sim.section_b
             AND cls.classification = ${similarityClassification}
+          )
+        ` : sql``}
+        ${needsObligationsJoin ? sql`
+          INNER JOIN obligations obl ON (
+            obl.jurisdiction = ${jurisdiction}
+            AND obl.section_id = s.id
+            AND obl.category = ANY(${sql`ARRAY[${sql.join(obligationCategories!.map(c => sql`${c}`), sql`, `)}]::text[]`})
           )
         ` : sql``}
         WHERE s.jurisdiction = ${jurisdiction}
@@ -71,17 +85,26 @@ export async function GET(request: Request) {
       const countSql = sql`
         SELECT COUNT(DISTINCT s.id)::int as count
         FROM sections s
-        INNER JOIN section_similarities sim ON (
-          sim.jurisdiction = ${jurisdiction}
-          AND (sim.section_a = s.id OR sim.section_b = s.id)
-          ${minSimilarity > 0.7 ? sql`AND sim.similarity >= ${minSimilarity}` : sql``}
-          ${maxSimilarity < 1.0 ? sql`AND sim.similarity <= ${maxSimilarity}` : sql``}
-        )
+        ${needsSimilarityJoin ? sql`
+          INNER JOIN section_similarities sim ON (
+            sim.jurisdiction = ${jurisdiction}
+            AND (sim.section_a = s.id OR sim.section_b = s.id)
+            ${minSimilarity > 0.7 ? sql`AND sim.similarity >= ${minSimilarity}` : sql``}
+            ${maxSimilarity < 1.0 ? sql`AND sim.similarity <= ${maxSimilarity}` : sql``}
+          )
+        ` : sql``}
         ${similarityClassification ? sql`
           INNER JOIN section_similarity_classifications cls ON (
             cls.jurisdiction = ${jurisdiction}
             AND cls.section_a = sim.section_a AND cls.section_b = sim.section_b
             AND cls.classification = ${similarityClassification}
+          )
+        ` : sql``}
+        ${needsObligationsJoin ? sql`
+          INNER JOIN obligations obl ON (
+            obl.jurisdiction = ${jurisdiction}
+            AND obl.section_id = s.id
+            AND obl.category = ANY(${sql`ARRAY[${sql.join(obligationCategories!.map(c => sql`${c}`), sql`, `)}]::text[]`})
           )
         ` : sql``}
         WHERE s.jurisdiction = ${jurisdiction}
@@ -113,6 +136,7 @@ export async function GET(request: Request) {
           minSimilarity: minSimilarity,
           maxSimilarity: maxSimilarity,
           similarityClassification: similarityClassification || null,
+          obligationCategories: obligationCategories || null,
         },
       });
     } else {
@@ -141,6 +165,75 @@ export async function GET(request: Request) {
       // Add reporting filter if provided
       if (hasReporting) {
         conditions.push(eq(sections.hasReporting, true));
+      }
+
+      // If obligations filter is specified but no other joins, we need special handling
+      if (needsObligationsJoin) {
+        // Use subquery to filter sections that have obligations in the specified categories
+        const baseSql = sql`
+          SELECT DISTINCT
+            s.id,
+            s.citation,
+            s.heading,
+            LEFT(s.text_plain, 200) as snippet,
+            s.title_label,
+            s.chapter_label
+          FROM sections s
+          INNER JOIN obligations obl ON (
+            obl.jurisdiction = ${jurisdiction}
+            AND obl.section_id = s.id
+            AND obl.category = ANY(${sql`ARRAY[${sql.join(obligationCategories!.map(c => sql`${c}`), sql`, `)}]::text[]`})
+          )
+          WHERE s.jurisdiction = ${jurisdiction}
+          ${query && query.trim() ? sql`AND s.text_fts @@ plainto_tsquery('english', ${query})` : sql``}
+          ${title && title.trim() ? sql`AND s.title_label = ${title}` : sql``}
+          ${chapter && chapter.trim() ? sql`AND s.chapter_label = ${chapter}` : sql``}
+          ${hasReporting ? sql`AND s.has_reporting = true` : sql``}
+          ORDER BY s.citation
+          LIMIT ${limit}
+          OFFSET ${offset}
+        `;
+
+        const countSql = sql`
+          SELECT COUNT(DISTINCT s.id)::int as count
+          FROM sections s
+          INNER JOIN obligations obl ON (
+            obl.jurisdiction = ${jurisdiction}
+            AND obl.section_id = s.id
+            AND obl.category = ANY(${sql`ARRAY[${sql.join(obligationCategories!.map(c => sql`${c}`), sql`, `)}]::text[]`})
+          )
+          WHERE s.jurisdiction = ${jurisdiction}
+          ${query && query.trim() ? sql`AND s.text_fts @@ plainto_tsquery('english', ${query})` : sql``}
+          ${title && title.trim() ? sql`AND s.title_label = ${title}` : sql``}
+          ${chapter && chapter.trim() ? sql`AND s.chapter_label = ${chapter}` : sql``}
+          ${hasReporting ? sql`AND s.has_reporting = true` : sql``}
+        `;
+
+        const results = await db.execute(baseSql);
+        const countResultData = await db.execute(countSql);
+        const countRow = countResultData.rows[0] as { count: number } | undefined;
+        const total = countRow?.count || 0;
+        const totalPages = Math.ceil(total / limit);
+
+        return NextResponse.json({
+          results: results.rows,
+          query: query || "",
+          count: results.rows.length,
+          total,
+          page,
+          limit,
+          totalPages,
+          filters: {
+            title: title || null,
+            chapter: chapter || null,
+            hasReporting: hasReporting,
+            hasSimilar: false,
+            minSimilarity: 0.7,
+            maxSimilarity: 1.0,
+            similarityClassification: null,
+            obligationCategories: obligationCategories || null,
+          },
+        });
       }
 
       // Combine all conditions
@@ -187,6 +280,7 @@ export async function GET(request: Request) {
           minSimilarity: 0.7,
           maxSimilarity: 1.0,
           similarityClassification: null,
+          obligationCategories: null,
         },
       });
     }
