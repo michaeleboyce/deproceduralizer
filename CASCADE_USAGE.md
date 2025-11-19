@@ -103,16 +103,34 @@ python pipeline/50_llm_reporting.py \
 - Retries after 100 attempts (FIFO)
 - Working models stay at top of stack
 
+**Model Priority Order:**
+1. **Vertex AI** (highest priority - Google AI Studio with higher limits)
+   - gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.0-flash, gemini-2.0-flash-lite
+2. **Gemini API** (backup tier - standard Google AI)
+   - gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.0-flash, gemini-2.0-flash-lite
+3. **Groq** (third tier - fast inference) - 9 models
+4. **OpenRouter** (fourth tier - free tier) - 5 models
+5. **Ollama** (final fallback - local) - phi4-mini
+
 **Example output:**
 ```
-🚀 Error-Driven LLM Client initialized with 19 models:
-   Gemini (4), Groq (9), Openrouter (5), Ollama (1)
+✓ Added 4 Vertex models
+✓ Added 4 Gemini models
+✓ Added 9 Groq models
+✓ Added 5 OpenRouter models
+✓ Added Ollama fallback
+🔄 Total models in cascade: 23
 
-⚠️  gemini-2.5-flash failed, moving to failed queue. Will retry after 100 attempts.
+[Worker ThreadPoolExecutor-0_0] Trying vertex:gemini-2.5-flash for dc-1-101
+⚠️  vertex:gemini-2.5-flash failed, moving to failed queue. Will retry after 100 attempts.
 
-🔄 Retrying gemini-2.5-flash (failed 1 times, 100 attempts since last failure)
-✅ gemini-2.5-flash is working again! Moving to top of active stack.
+[Worker ThreadPoolExecutor-0_1] Trying gemini:gemini-2.5-flash for dc-1-102
+🔄 Retrying vertex:gemini-2.5-flash (failed 1 times, 100 attempts since last failure)
+✅ vertex:gemini-2.5-flash is working again! Moving to top of active stack.
 ```
+
+**Worker Tracking:**
+When using parallel workers (`--workers > 1` or `PIPELINE_WORKERS > 1`), logs show which worker is trying which model, making it easy to debug parallel execution.
 
 ### Use **Rate-Limited** When:
 - ✅ You have accurate rate limit information

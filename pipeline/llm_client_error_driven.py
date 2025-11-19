@@ -57,10 +57,20 @@ T = TypeVar('T', bound=BaseModel)
 
 # API Configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+VERTEX_API_KEY = os.getenv("VERTEX_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # Model configurations (same as before, but rate limits are informational only)
+# Vertex API models (Google AI Studio with higher limits)
+VERTEX_MODELS = [
+    {"name": "gemini-2.5-flash", "tier": "vertex"},
+    {"name": "gemini-2.5-flash-lite", "tier": "vertex"},
+    {"name": "gemini-2.0-flash", "tier": "vertex"},
+    {"name": "gemini-2.0-flash-lite", "tier": "vertex"},
+]
+
+# Standard Gemini API models (backup tier)
 GEMINI_MODELS = [
     {"name": "gemini-2.5-flash", "tier": "gemini"},
     {"name": "gemini-2.5-flash-lite", "tier": "gemini"},
@@ -261,18 +271,32 @@ class ErrorDrivenLLMClient:
         # Build list of all available models in priority order
         all_models = []
 
-        # Add models based on API key availability
+        # Add models based on API key availability (priority order)
+        # 1. Vertex (highest tier - Google AI Studio)
+        if VERTEX_API_KEY:
+            all_models.extend(VERTEX_MODELS)
+            logger.info(f"✓ Added {len(VERTEX_MODELS)} Vertex models")
+
+        # 2. Standard Gemini (backup tier)
         if GEMINI_API_KEY:
             all_models.extend(GEMINI_MODELS)
+            logger.info(f"✓ Added {len(GEMINI_MODELS)} Gemini models")
 
+        # 3. Groq (third tier)
         if GROQ_API_KEY:
             all_models.extend(GROQ_MODELS)
+            logger.info(f"✓ Added {len(GROQ_MODELS)} Groq models")
 
+        # 4. OpenRouter (fourth tier)
         if OPENROUTER_API_KEY:
             all_models.extend(OPENROUTER_MODELS)
+            logger.info(f"✓ Added {len(OPENROUTER_MODELS)} OpenRouter models")
 
-        # Always add Ollama as final fallback
+        # 5. Ollama (final fallback)
         all_models.append(OLLAMA_CONFIG)
+        logger.info(f"✓ Added Ollama fallback")
+
+        logger.info(f"🔄 Total models in cascade: {len(all_models)}")
 
         # Initialize cascade
         self.cascade = ErrorDrivenCascade(all_models)
@@ -335,6 +359,94 @@ class ErrorDrivenLLMClient:
         # Update current model tracking
         self.stats['current_model'] = new_model
         self.stats['current_model_start_time'] = current_time
+
+    def _call_vertex_with_instructor(
+        self,
+        prompt: str,
+        response_model: Type[T],
+        model_name: str,
+        max_retries: int = 3
+    ) -> Optional[T]:
+        """Call Vertex AI (Google AI Studio) API with Instructor for validated responses."""
+        if not VERTEX_API_KEY:
+            return None
+
+        try:
+            headers = {"Content-Type": "application/json"}
+
+            schema_json = response_model.model_json_schema()
+            schema_str = str(schema_json)
+
+            structured_prompt = f"""{prompt}
+
+IMPORTANT: Respond with VALID JSON ONLY (no markdown, no explanations) that matches this exact schema:
+{schema_str}
+
+Return only the JSON object, nothing else."""
+
+            payload = {
+                "contents": [{"parts": [{"text": structured_prompt}]}],
+                "generationConfig": {
+                    "temperature": 0.1,
+                    "topP": 0.95,
+                    "topK": 40,
+                    "maxOutputTokens": 30000
+                }
+            }
+
+            # Vertex uses same endpoint as Gemini but with different API key
+            vertex_api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+
+            for attempt in range(max_retries):
+                response = requests.post(
+                    f"{vertex_api_url}?key={VERTEX_API_KEY}",
+                    headers=headers,
+                    json=payload,
+                    timeout=30
+                )
+
+                if response.status_code == 429:
+                    logger.debug(f"Vertex rate limited (429) for {model_name}")
+                    return None
+
+                response.raise_for_status()
+                data = response.json()
+
+                if "candidates" in data and len(data["candidates"]) > 0:
+                    candidate = data["candidates"][0]
+                    if "content" in candidate and "parts" in candidate["content"]:
+                        response_text = candidate["content"]["parts"][0].get("text", "")
+
+                        try:
+                            import re
+                            import json
+
+                            try:
+                                json_data = json.loads(response_text.strip())
+                            except json.JSONDecodeError:
+                                json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+                                if json_match:
+                                    json_data = json.loads(json_match.group(1))
+                                else:
+                                    obj_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text, re.DOTALL)
+                                    if obj_match:
+                                        json_data = json.loads(obj_match.group(0))
+                                    else:
+                                        raise json.JSONDecodeError("No JSON found", response_text, 0)
+
+                            validated = response_model.model_validate(json_data)
+                            return validated
+
+                        except Exception as e:
+                            logger.debug(f"Vertex validation error (attempt {attempt + 1}/{max_retries}): {e}")
+                            if attempt == max_retries - 1:
+                                return None
+
+                return None
+
+        except Exception as e:
+            logger.error(f"Unexpected error with Vertex: {e}")
+            return None
 
     def _call_gemini_with_instructor(
         self,
@@ -713,25 +825,33 @@ Return only the JSON object, nothing else."""
         Returns:
             LLMResponse with validated data and model_used, or None if all models failed
         """
+        # Get worker ID from environment (set by ThreadPoolExecutor)
+        import threading
+        worker_id = threading.current_thread().name
+
         # Get next model to try from cascade
         model_config = self.cascade.get_next_model()
 
         if not model_config:
-            logger.error("No models available!")
+            logger.error(f"[Worker {worker_id}] No models available!")
             return None
 
         model_name = model_config["name"]
         tier = model_config["tier"]
 
-        # Log model switch if needed
-        self._log_model_switch(model_name, f"Cascade selected {tier} tier")
+        # Log model switch with worker ID
+        self._log_model_switch(model_name, f"[Worker {worker_id}] Cascade selected {tier} tier")
 
         # Try the model
         result = None
         error_msg = ""
 
         try:
-            if tier == "gemini":
+            logger.debug(f"[Worker {worker_id}] Trying {tier}:{model_name} for {section_id or 'unknown'}")
+
+            if tier == "vertex":
+                result = self._call_vertex_with_instructor(prompt, response_model, model_name)
+            elif tier == "gemini":
                 result = self._call_gemini_with_instructor(prompt, response_model, model_name)
             elif tier == "groq":
                 result = self._call_groq_with_instructor(prompt, response_model, model_name)
