@@ -1,6 +1,6 @@
 #!/bin/bash
 # Create a small-plus subset of DC Code XML files for testing
-# Copies first 50 sections from Titles 1-4
+# Copies first 50 sections from Titles 1-4 with full directory structure
 # Target: ~200 sections (2x small corpus size)
 
 set -e
@@ -17,31 +17,42 @@ if [ ! -d "$SOURCE_DIR" ]; then
     exit 1
 fi
 
-# Create destination directory
+# Remove and recreate destination directory
+rm -rf "$DEST_DIR"
 mkdir -p "$DEST_DIR"
 
-# Remove any existing subset files
-rm -f "$DEST_DIR"/*.xml
+echo "Copying first 50 sections from each of Titles 1-4 with directory structure..."
 
-echo "Copying first 50 sections from each of Titles 1-4..."
-
-# Copy first 50 sections from each title
+# Copy first 50 sections from each title, preserving directory structure
 for i in {1..4}; do
-    echo "  Copying Title $i..."
-    find "$SOURCE_DIR/$i/sections" -name "*.xml" -type f | sort | head -50 | while read file; do
-        cp "$file" "$DEST_DIR/"
-    done
-done
+    TITLE_SOURCE="$SOURCE_DIR/$i"
+    TITLE_DEST="$DEST_DIR/$i"
 
-# Also copy the title index files for hierarchy information
-for i in {1..4}; do
-    if [ -f "$SOURCE_DIR/$i/index.xml" ]; then
-        cp "$SOURCE_DIR/$i/index.xml" "$DEST_DIR/title-$i-index.xml"
+    if [ -d "$TITLE_SOURCE" ]; then
+        echo "  Copying Title $i..."
+
+        # Create title directory
+        mkdir -p "$TITLE_DEST"
+
+        # Copy index.xml if it exists
+        if [ -f "$TITLE_SOURCE/index.xml" ]; then
+            cp "$TITLE_SOURCE/index.xml" "$TITLE_DEST/"
+        fi
+
+        # Create sections directory
+        mkdir -p "$TITLE_DEST/sections"
+
+        # Copy first 50 section files
+        find "$TITLE_SOURCE/sections" -name "*.xml" -type f | sort | head -50 | while read file; do
+            cp "$file" "$TITLE_DEST/sections/"
+        done
+    else
+        echo "  Warning: Title $i directory not found at $TITLE_SOURCE"
     fi
 done
 
-COUNT=$(find "$DEST_DIR" -name "*.xml" -type f ! -name "*-index.xml" | wc -l | tr -d ' ')
-INDEX_COUNT=$(find "$DEST_DIR" -name "*-index.xml" -type f | wc -l | tr -d ' ')
+COUNT=$(find "$DEST_DIR" -type f -name "*.xml" ! -name "index.xml" | wc -l | tr -d ' ')
+INDEX_COUNT=$(find "$DEST_DIR" -type f -name "index.xml" | wc -l | tr -d ' ')
 
 echo ""
 echo "✓ Copied $COUNT section XML files to $DEST_DIR"
