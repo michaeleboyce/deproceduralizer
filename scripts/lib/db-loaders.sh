@@ -112,9 +112,15 @@ load_obligations() {
     local enhanced_file="data/outputs/obligations_enhanced${suffix}.ndjson"
     if [[ -f "$enhanced_file" ]]; then
         log_info "Loading enhanced obligations (LLM-based)"
-        # TODO: Create load_obligations_enhanced.py loader
-        log_warning "Enhanced obligations loader not yet implemented"
-        log_info "Falling back to regex-based obligations..."
+        PYTHONPATH=. python dbtools/load_obligations_enhanced.py \
+            --input "$enhanced_file" || {
+            log_error "Failed to load enhanced obligations"
+            return 1
+        }
+
+        local duration=$(($(date +%s) - start_time))
+        log_success "Enhanced obligations loaded [$(format_duration $duration)]"
+        return 0
     fi
 
     # Fall back to regex-based obligations
@@ -244,6 +250,36 @@ load_classifications() {
 }
 
 #===============================================================================
+# LOADER: Anachronisms
+#===============================================================================
+
+load_anachronisms() {
+    local corpus=$1
+    local start_time=$(date +%s)
+
+    echo "Loading anachronisms..."
+
+    local suffix=$(get_output_suffix "$corpus")
+    local input_file="data/outputs/anachronisms${suffix}.ndjson"
+
+    if [[ ! -f "$input_file" ]]; then
+        log_error "Input file not found: $input_file"
+        echo "Run pipeline step 7 first"
+        return 1
+    fi
+
+    PYTHONPATH=. python dbtools/load_anachronisms.py \
+        --input "$input_file" || {
+        log_error "Failed to load anachronisms"
+        return 1
+    }
+
+    local duration=$(($(date +%s) - start_time))
+    log_success "Anachronisms loaded [$(format_duration $duration)]"
+    return 0
+}
+
+#===============================================================================
 # LOADER DISPATCHER
 #===============================================================================
 
@@ -259,6 +295,7 @@ load_table() {
         similarities) load_similarities "$corpus" ;;
         reporting) load_reporting "$corpus" ;;
         classifications) load_classifications "$corpus" ;;
+        anachronisms) load_anachronisms "$corpus" ;;
         *)
             log_error "Invalid table name: $table"
             return 1
@@ -272,9 +309,9 @@ load_table() {
 
 load_all_tables() {
     local corpus=$1
-    local tables="sections structure refs obligations similarities reporting classifications"
+    local tables="sections structure refs obligations similarities reporting classifications anachronisms"
 
-    local total=7
+    local total=8
     local current=0
     local failed=0
 

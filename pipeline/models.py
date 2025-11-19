@@ -322,6 +322,10 @@ class ObligationsList(BaseModel):
         default_factory=list,
         description="List of all obligations found in the section (can be empty)"
     )
+    potential_anachronism: bool = Field(
+        default=False,
+        description="True if section contains anachronistic language (obsolete technology, outdated terminology, discriminatory language)"
+    )
 
     model_config = {"str_strip_whitespace": True}
 
@@ -427,6 +431,10 @@ class ReportingRequirement(BaseModel):
         default_factory=list,
         description="Exact phrases from text to highlight in UI",
         max_length=50,
+    )
+    potential_anachronism: bool = Field(
+        default=False,
+        description="True if section contains anachronistic language (obsolete technology, outdated terminology, discriminatory language)"
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
@@ -536,6 +544,128 @@ class SimilarityClassification(BaseModel):
         elif v < 0.0:
             return 0.0
         return v
+
+    @field_validator("analyzed_at")
+    @classmethod
+    def validate_iso8601(cls, v: str) -> str:
+        """Validate timestamp is valid ISO 8601 format."""
+        try:
+            datetime.fromisoformat(v.replace("Z", "+00:00"))
+            return v
+        except ValueError:
+            raise ValueError(f"analyzed_at must be ISO 8601 format, got: {v}")
+
+    model_config = {"str_strip_whitespace": True}
+
+
+# =============================================================================
+# Anachronism Detection Models
+# =============================================================================
+
+
+class AnachronismIndicator(BaseModel):
+    """
+    Individual anachronistic indicator found in a legal section.
+
+    Output of: pipeline/60_llm_anachronisms.py
+    Consumed by: dbtools/load_anachronisms.py
+    """
+
+    category: Literal[
+        "jim_crow",
+        "obsolete_technology",
+        "defunct_agency",
+        "gendered_titles",
+        "archaic_measurements",
+        "outdated_professions",
+        "obsolete_legal_terms",
+        "outdated_medical_terms",
+        "obsolete_transportation",
+        "obsolete_military",
+        "prohibition_era",
+        "outdated_education",
+        "obsolete_religious",
+        "age_based",
+        "environmental_agricultural",
+        "commercial_business",
+        "outdated_social_structures",
+        "obsolete_economic",
+    ] = Field(..., description="Category of anachronism detected")
+    severity: Literal["CRITICAL", "HIGH", "MEDIUM", "LOW"] = Field(
+        ..., description="Severity level of the anachronism"
+    )
+    matched_phrases: List[str] = Field(
+        ...,
+        description="Exact phrases from the section that are anachronistic",
+        min_length=1,
+        max_length=20,
+    )
+    modern_equivalent: Optional[str] = Field(
+        None,
+        description="Suggested modern replacement language",
+        max_length=500,
+    )
+    recommendation: Literal["REPEAL", "UPDATE", "REVIEW", "PRESERVE"] = Field(
+        ...,
+        description="Recommended action: REPEAL (unconstitutional/harmful), UPDATE (replace terms), REVIEW (needs legal analysis), PRESERVE (historical context)",
+    )
+    explanation: str = Field(
+        ...,
+        description="Explanation of why this is anachronistic and what it means",
+        min_length=20,
+        max_length=1000,
+    )
+
+    model_config = {"str_strip_whitespace": True}
+
+
+class AnachronismAnalysis(BaseModel):
+    """
+    Complete anachronism analysis for a legal section.
+
+    Output of: pipeline/60_llm_anachronisms.py
+    Consumed by: dbtools/load_anachronisms.py
+    """
+
+    jurisdiction: str = Field(
+        default="dc",
+        description="Jurisdiction code",
+        max_length=10,
+    )
+    section_id: str = Field(..., description="Section ID being analyzed")
+    has_anachronism: bool = Field(
+        ...,
+        description="True if section contains any anachronistic language",
+    )
+    overall_severity: Optional[Literal["CRITICAL", "HIGH", "MEDIUM", "LOW"]] = Field(
+        None,
+        description="Highest severity level among all indicators (null if no anachronisms)",
+    )
+    indicators: List[AnachronismIndicator] = Field(
+        default_factory=list,
+        description="List of all anachronistic indicators found (empty if none)",
+    )
+    summary: str = Field(
+        default="",
+        description="Overall summary of anachronistic content (empty if none found)",
+        max_length=1000,
+    )
+    requires_immediate_review: bool = Field(
+        default=False,
+        description="True if section contains CRITICAL severity issues requiring immediate legal review",
+    )
+    model_used: str = Field(
+        ...,
+        description="LLM model used for analysis",
+        max_length=50,
+    )
+    analyzed_at: str = Field(..., description="ISO 8601 timestamp of analysis")
+
+    @field_validator("jurisdiction")
+    @classmethod
+    def lowercase_jurisdiction(cls, v: str) -> str:
+        """Ensure jurisdiction is lowercase."""
+        return v.lower()
 
     @field_validator("analyzed_at")
     @classmethod

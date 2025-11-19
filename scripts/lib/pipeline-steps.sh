@@ -12,7 +12,7 @@ run_step_1_parse_xml() {
     local corpus=$1
     local start_time=$(date +%s)
 
-    log_step 1 6 "Parse XML sections" "IN_PROGRESS"
+    log_step 1 7 "Parse XML sections" "IN_PROGRESS"
     echo ""
 
     local source_dir=$(get_source_dir "$corpus")
@@ -36,7 +36,7 @@ run_step_1_parse_xml() {
     local structure_count=$(wc -l < "$structure_file" | tr -d ' ')
     local duration=$(($(date +%s) - start_time))
 
-    log_step 1 6 "Parse XML sections" "DONE"
+    log_step 1 7 "Parse XML sections" "DONE"
     echo " [$(format_duration $duration) - $section_count sections, $structure_count structure nodes]"
 }
 
@@ -48,7 +48,7 @@ run_step_2_extract_refs() {
     local corpus=$1
     local start_time=$(date +%s)
 
-    log_step 2 6 "Extract cross-references" "IN_PROGRESS"
+    log_step 2 7 "Extract cross-references" "IN_PROGRESS"
     echo ""
 
     local suffix=$(get_output_suffix "$corpus")
@@ -74,7 +74,7 @@ run_step_2_extract_refs() {
     local ref_count=$(wc -l < "$output_file" | tr -d ' ')
     local duration=$(($(date +%s) - start_time))
 
-    log_step 2 6 "Extract cross-references" "DONE"
+    log_step 2 7 "Extract cross-references" "DONE"
     echo " [$(format_duration $duration) - $ref_count references]"
 }
 
@@ -86,7 +86,7 @@ run_step_3_extract_obligations() {
     local corpus=$1
     local start_time=$(date +%s)
 
-    log_step 3 6 "Extract obligations (LLM)" "IN_PROGRESS"
+    log_step 3 7 "Extract obligations (LLM)" "IN_PROGRESS"
     echo ""
 
     # Check Ollama
@@ -113,7 +113,7 @@ run_step_3_extract_obligations() {
         local amount_count=$(wc -l < "$amounts_file" | tr -d ' ')
         local duration=$(($(date +%s) - start_time))
 
-        log_step 3 6 "Extract obligations (regex)" "DONE"
+        log_step 3 7 "Extract obligations (regex)" "DONE"
         echo " [$(format_duration $duration) - $deadline_count deadlines, $amount_count amounts]"
         return 0
     fi
@@ -135,7 +135,7 @@ run_step_3_extract_obligations() {
     local obligation_count=$(wc -l < "$output_file" | tr -d ' ')
     local duration=$(($(date +%s) - start_time))
 
-    log_step 3 6 "Extract obligations (LLM)" "DONE"
+    log_step 3 7 "Extract obligations (LLM)" "DONE"
     echo " [$(format_duration $duration) - $obligation_count obligations]"
 }
 
@@ -147,7 +147,7 @@ run_step_4_compute_similarities() {
     local corpus=$1
     local start_time=$(date +%s)
 
-    log_step 4 6 "Compute similarities" "IN_PROGRESS"
+    log_step 4 7 "Compute similarities" "IN_PROGRESS"
     echo ""
     log_info "This step computes embeddings and may take several minutes..."
 
@@ -176,7 +176,7 @@ run_step_4_compute_similarities() {
     local similarity_count=$(wc -l < "$output_file" | tr -d ' ')
     local duration=$(($(date +%s) - start_time))
 
-    log_step 4 6 "Compute similarities" "DONE"
+    log_step 4 7 "Compute similarities" "DONE"
     echo " [$(format_duration $duration) - $similarity_count pairs]"
 }
 
@@ -188,7 +188,7 @@ run_step_5_detect_reporting() {
     local corpus=$1
     local start_time=$(date +%s)
 
-    log_step 5 6 "Detect reporting (LLM)" "IN_PROGRESS"
+    log_step 5 7 "Detect reporting (LLM)" "IN_PROGRESS"
     echo ""
     log_info "This step uses LLM and may take 10-20 minutes..."
 
@@ -221,7 +221,7 @@ run_step_5_detect_reporting() {
     local reporting_count=$(wc -l < "$output_file" | tr -d ' ')
     local duration=$(($(date +%s) - start_time))
 
-    log_step 5 6 "Detect reporting (LLM)" "DONE"
+    log_step 5 7 "Detect reporting (LLM)" "DONE"
     echo " [$(format_duration $duration) - $reporting_count sections analyzed]"
 }
 
@@ -233,7 +233,7 @@ run_step_6_classify_similarities() {
     local corpus=$1
     local start_time=$(date +%s)
 
-    log_step 6 6 "Classify similarities (LLM)" "IN_PROGRESS"
+    log_step 6 7 "Classify similarities (LLM)" "IN_PROGRESS"
     echo ""
     log_info "This step uses LLM and may take 15-30 minutes..."
 
@@ -274,8 +274,67 @@ run_step_6_classify_similarities() {
     local classification_count=$(wc -l < "$output_file" | tr -d ' ')
     local duration=$(($(date +%s) - start_time))
 
-    log_step 6 6 "Classify similarities (LLM)" "DONE"
+    log_step 6 7 "Classify similarities (LLM)" "DONE"
     echo " [$(format_duration $duration) - $classification_count classifications]"
+}
+
+#===============================================================================
+# STEP 7: Detect Anachronisms (LLM)
+#===============================================================================
+
+run_step_7_detect_anachronisms() {
+    local corpus=$1
+    local start_time=$(date +%s)
+
+    log_step 7 7 "Detect anachronisms (LLM)" "IN_PROGRESS"
+    echo ""
+    log_info "This step analyzes flagged sections for anachronistic language..."
+
+    # Check Ollama
+    check_ollama || {
+        log_error "Ollama is required for anachronism detection"
+        exit 1
+    }
+
+    local suffix=$(get_output_suffix "$corpus")
+    local sections_file="data/outputs/sections${suffix}.ndjson"
+    local obligations_file="data/outputs/obligations_enhanced${suffix}.ndjson"
+    local reporting_file="data/outputs/reporting${suffix}.ndjson"
+    local output_file="data/outputs/anachronisms${suffix}.ndjson"
+
+    # Validate inputs exist
+    if [[ ! -f "$sections_file" ]]; then
+        log_error "Input file not found: $sections_file"
+        echo "Run step 1 first: Parse XML sections"
+        exit 1
+    fi
+
+    if [[ ! -f "$obligations_file" ]]; then
+        log_warning "Obligations file not found: $obligations_file"
+        log_warning "Anachronism detection works best with obligations data from step 3"
+    fi
+
+    if [[ ! -f "$reporting_file" ]]; then
+        log_warning "Reporting file not found: $reporting_file"
+        log_warning "Anachronism detection works best with reporting data from step 5"
+    fi
+
+    python pipeline/60_llm_anachronisms.py \
+        --sections "$sections_file" \
+        --obligations "$obligations_file" \
+        --reporting "$reporting_file" \
+        --out "$output_file" || {
+        log_error "Anachronism detection failed"
+        exit 1
+    }
+
+    validate_output_file "$output_file" "Detect anachronisms"
+
+    local anachronism_count=$(wc -l < "$output_file" | tr -d ' ')
+    local duration=$(($(date +%s) - start_time))
+
+    log_step 7 7 "Detect anachronisms (LLM)" "DONE"
+    echo " [$(format_duration $duration) - $anachronism_count sections analyzed]"
 }
 
 #===============================================================================
@@ -293,6 +352,7 @@ run_pipeline_step() {
         4) run_step_4_compute_similarities "$corpus" ;;
         5) run_step_5_detect_reporting "$corpus" ;;
         6) run_step_6_classify_similarities "$corpus" ;;
+        7) run_step_7_detect_anachronisms "$corpus" ;;
         *)
             log_error "Invalid step number: $step_num"
             exit 1

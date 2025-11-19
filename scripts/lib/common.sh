@@ -72,7 +72,7 @@ validate_steps() {
 
 validate_tables() {
     local tables=$1
-    local valid_tables="sections structure refs obligations similarities reporting classifications"
+    local valid_tables="sections structure refs obligations similarities reporting classifications anachronisms"
 
     if [[ "$tables" == "all" ]]; then
         return 0

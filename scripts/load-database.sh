@@ -37,6 +37,7 @@ Available Tables:
   similarities           Similar section pairs
   reporting              Reporting requirements
   classifications        Similarity relationship classifications
+  anachronisms           Anachronistic language detection
 
 Examples:
   # Load all tables for small corpus
@@ -117,7 +118,7 @@ parse_tables() {
     local tables=$1
 
     if [[ "$tables" == "all" ]]; then
-        echo "sections structure refs obligations similarities reporting classifications"
+        echo "sections structure refs obligations similarities reporting classifications anachronisms"
         return
     fi
 

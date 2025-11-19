@@ -300,6 +300,91 @@ CREATE TABLE IF NOT EXISTS dc_section_highlights (
 CREATE INDEX IF NOT EXISTS dc_section_highlights_section_idx
   ON dc_section_highlights (section_id);
 
+--===============================================================================
+-- ANACHRONISM DETECTION TABLES
+--===============================================================================
+
+-- Main anachronism analysis results
+CREATE TABLE IF NOT EXISTS section_anachronisms (
+  jurisdiction text NOT NULL,
+  section_id text NOT NULL,
+  has_anachronism boolean NOT NULL DEFAULT false,
+  overall_severity text CHECK (overall_severity IN ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW')),
+  summary text,
+  requires_immediate_review boolean NOT NULL DEFAULT false,
+  model_used text,
+  analyzed_at timestamp with time zone NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  PRIMARY KEY (jurisdiction, section_id),
+  FOREIGN KEY (jurisdiction, section_id) REFERENCES sections(jurisdiction, id) ON DELETE CASCADE
+);
+
+-- Individual anachronism indicators
+CREATE TABLE IF NOT EXISTS anachronism_indicators (
+  id bigserial PRIMARY KEY,
+  jurisdiction text NOT NULL,
+  section_id text NOT NULL,
+  category text NOT NULL CHECK (category IN (
+    'jim_crow',
+    'obsolete_technology',
+    'defunct_agency',
+    'gendered_titles',
+    'archaic_measurements',
+    'outdated_professions',
+    'obsolete_legal_terms',
+    'outdated_medical_terms',
+    'obsolete_transportation',
+    'obsolete_military',
+    'prohibition_era',
+    'outdated_education',
+    'obsolete_religious',
+    'age_based',
+    'environmental_agricultural',
+    'commercial_business',
+    'outdated_social_structures',
+    'obsolete_economic'
+  )),
+  severity text NOT NULL CHECK (severity IN ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW')),
+  modern_equivalent text,
+  recommendation text NOT NULL CHECK (recommendation IN ('REPEAL', 'UPDATE', 'REVIEW', 'PRESERVE')),
+  explanation text NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  FOREIGN KEY (jurisdiction, section_id) REFERENCES section_anachronisms(jurisdiction, section_id) ON DELETE CASCADE
+);
+
+-- Matched phrases for anachronisms (for UI highlighting)
+CREATE TABLE IF NOT EXISTS section_anachronism_highlights (
+  id bigserial PRIMARY KEY,
+  indicator_id bigint NOT NULL REFERENCES anachronism_indicators(id) ON DELETE CASCADE,
+  phrase text NOT NULL,
+  created_at timestamp with time zone DEFAULT now()
+);
+
+-- Indexes for anachronism tables
+CREATE INDEX IF NOT EXISTS section_anachronisms_severity_idx
+  ON section_anachronisms (jurisdiction, overall_severity)
+  WHERE has_anachronism = true;
+
+CREATE INDEX IF NOT EXISTS section_anachronisms_immediate_review_idx
+  ON section_anachronisms (jurisdiction, requires_immediate_review)
+  WHERE requires_immediate_review = true;
+
+CREATE INDEX IF NOT EXISTS anachronism_indicators_section_idx
+  ON anachronism_indicators (jurisdiction, section_id);
+
+CREATE INDEX IF NOT EXISTS anachronism_indicators_category_idx
+  ON anachronism_indicators (category);
+
+CREATE INDEX IF NOT EXISTS anachronism_indicators_severity_idx
+  ON anachronism_indicators (severity);
+
+CREATE INDEX IF NOT EXISTS anachronism_highlights_indicator_idx
+  ON section_anachronism_highlights (indicator_id);
+
+--===============================================================================
+-- TRIGGER FUNCTIONS
+--===============================================================================
+
 -- Update timestamp trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$

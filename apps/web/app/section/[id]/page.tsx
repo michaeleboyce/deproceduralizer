@@ -304,7 +304,7 @@ export default async function SectionPage({
       const highlights = await db
         .select({ phrase: sectionAnachronismHighlights.phrase })
         .from(sectionAnachronismHighlights)
-        .where(eq(sectionAnachronismHighlights.indicatorId, BigInt(indicator.id)));
+        .where(eq(sectionAnachronismHighlights.indicatorId, indicator.id));
 
       anachronismIndicatorsData.push({
         ...indicator,
