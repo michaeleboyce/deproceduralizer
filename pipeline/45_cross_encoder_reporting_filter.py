@@ -98,6 +98,7 @@ def filter_candidates(
     input_file: Path,
     output_file: Path,
     checkpoint: dict,
+    threshold: float = CONFIDENCE_THRESHOLD,
     limit: int = None,
 ) -> Tuple[int, int]:
     """
@@ -107,6 +108,7 @@ def filter_candidates(
         input_file: Input NDJSON file with sections
         output_file: Output NDJSON file for candidates
         checkpoint: Checkpoint dict
+        threshold: Confidence threshold for filtering
         limit: Optional limit on number of sections to process
 
     Returns:
@@ -141,7 +143,7 @@ def filter_candidates(
             # Score section against reporting indicators
             score = score_section(cross_encoder, text_plain, REPORTING_INDICATORS)
 
-            if score >= CONFIDENCE_THRESHOLD:
+            if score >= threshold:
                 # Pass through to LLM stage
                 writer.write({
                     "id": section_id,
@@ -211,15 +213,12 @@ def main():
     # Load checkpoint
     checkpoint = load_checkpoint()
 
-    # Update threshold if different
-    global CONFIDENCE_THRESHOLD
-    CONFIDENCE_THRESHOLD = args.threshold
-
     # Filter candidates
     sections_filtered, sections_passed = filter_candidates(
         input_file,
         output_file,
         checkpoint,
+        threshold=args.threshold,
         limit=args.limit,
     )
 
