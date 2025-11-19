@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS dc_sections (
   -- Optional analysis fields (populated by pipeline)
   has_reporting      boolean DEFAULT false,
   reporting_summary  text,
+  reporting_text     text,
   reporting_tags     jsonb DEFAULT '[]'::jsonb,
 
   -- Metadata
@@ -124,6 +125,168 @@ CREATE INDEX IF NOT EXISTS dc_section_similarities_a_idx
 
 CREATE INDEX IF NOT EXISTS dc_section_similarities_b_idx
   ON dc_section_similarities (section_b, similarity DESC);
+
+-- Multi-jurisdiction schema for section tables
+-- Universal sections table (replaces dc_sections for multi-jurisdiction support)
+CREATE TABLE IF NOT EXISTS sections (
+  jurisdiction   text NOT NULL,
+  id             text NOT NULL,
+  citation       text NOT NULL,
+  heading        text NOT NULL,
+  text_plain     text NOT NULL,
+  text_html      text NOT NULL,
+  ancestors      jsonb NOT NULL DEFAULT '[]'::jsonb,
+  title_label    text NOT NULL,
+  chapter_label  text NOT NULL,
+
+  -- Full-text search column
+  text_fts       tsvector GENERATED ALWAYS AS (
+                    to_tsvector('english', text_plain)
+                  ) STORED,
+
+  -- Optional analysis fields
+  has_reporting      boolean DEFAULT false,
+  reporting_summary  text,
+  reporting_text     text,
+  reporting_tags     jsonb DEFAULT '[]'::jsonb,
+
+  -- Metadata
+  created_at     timestamp with time zone DEFAULT now(),
+  updated_at     timestamp with time zone DEFAULT now(),
+
+  PRIMARY KEY (jurisdiction, id)
+);
+
+-- Indexes for sections
+CREATE INDEX IF NOT EXISTS sections_text_fts_idx
+  ON sections USING GIN (text_fts);
+
+CREATE INDEX IF NOT EXISTS sections_jurisdiction_idx
+  ON sections (jurisdiction);
+
+CREATE INDEX IF NOT EXISTS sections_title_idx
+  ON sections (jurisdiction, title_label);
+
+CREATE INDEX IF NOT EXISTS sections_chapter_idx
+  ON sections (jurisdiction, chapter_label);
+
+CREATE INDEX IF NOT EXISTS sections_has_reporting_idx
+  ON sections (jurisdiction, has_reporting)
+  WHERE has_reporting = true;
+
+-- Multi-jurisdiction structure table
+CREATE TABLE IF NOT EXISTS structure (
+  jurisdiction   text NOT NULL,
+  id             text NOT NULL,
+  parent_id      text,
+  level          text NOT NULL,
+  label          text NOT NULL,
+  heading        text NOT NULL,
+  ordinal        integer NOT NULL,
+  created_at     timestamp with time zone DEFAULT now(),
+  PRIMARY KEY (jurisdiction, id)
+);
+
+-- Indexes for structure
+CREATE INDEX IF NOT EXISTS structure_jurisdiction_idx
+  ON structure (jurisdiction);
+
+CREATE INDEX IF NOT EXISTS structure_parent_idx
+  ON structure (jurisdiction, parent_id);
+
+CREATE INDEX IF NOT EXISTS structure_level_idx
+  ON structure (jurisdiction, level);
+
+-- Multi-jurisdiction cross-references
+CREATE TABLE IF NOT EXISTS section_refs (
+  jurisdiction text NOT NULL,
+  from_id      text NOT NULL,
+  to_id        text NOT NULL,
+  raw_cite     text NOT NULL,
+  PRIMARY KEY (jurisdiction, from_id, to_id, raw_cite),
+  FOREIGN KEY (jurisdiction, from_id) REFERENCES sections(jurisdiction, id) ON DELETE CASCADE,
+  FOREIGN KEY (jurisdiction, to_id) REFERENCES sections(jurisdiction, id) ON DELETE CASCADE
+);
+
+-- Indexes for section_refs
+CREATE INDEX IF NOT EXISTS section_refs_from_idx
+  ON section_refs (jurisdiction, from_id);
+
+CREATE INDEX IF NOT EXISTS section_refs_to_idx
+  ON section_refs (jurisdiction, to_id);
+
+-- Multi-jurisdiction similarities
+CREATE TABLE IF NOT EXISTS section_similarities (
+  jurisdiction text NOT NULL,
+  section_a    text NOT NULL,
+  section_b    text NOT NULL,
+  similarity   real NOT NULL,
+  PRIMARY KEY (jurisdiction, section_a, section_b),
+  CHECK (section_a < section_b),
+  FOREIGN KEY (jurisdiction, section_a) REFERENCES sections(jurisdiction, id) ON DELETE CASCADE,
+  FOREIGN KEY (jurisdiction, section_b) REFERENCES sections(jurisdiction, id) ON DELETE CASCADE
+);
+
+-- Indexes for section_similarities
+CREATE INDEX IF NOT EXISTS section_similarities_a_idx
+  ON section_similarities (jurisdiction, section_a, similarity DESC);
+
+CREATE INDEX IF NOT EXISTS section_similarities_b_idx
+  ON section_similarities (jurisdiction, section_b, similarity DESC);
+
+-- Multi-jurisdiction similarity classifications (with cross-encoder triage)
+CREATE TABLE IF NOT EXISTS section_similarity_classifications (
+  jurisdiction   text NOT NULL,
+  section_a      text NOT NULL,
+  section_b      text NOT NULL,
+  classification text NOT NULL CHECK (classification IN ('duplicate', 'superseded', 'related', 'conflicting', 'unrelated')),
+  explanation    text NOT NULL,
+  model_used     text NOT NULL,
+  analyzed_at    timestamp with time zone NOT NULL,
+
+  -- Cross-encoder triage metadata (for Model Cascading optimization)
+  cross_encoder_label text CHECK (cross_encoder_label IN ('entailment', 'contradiction', 'neutral') OR cross_encoder_label IS NULL),
+  cross_encoder_score real CHECK (cross_encoder_score >= 0.0 OR cross_encoder_score IS NULL),  -- Allows unnormalized logits (can be > 1.0)
+
+  created_at     timestamp with time zone DEFAULT now(),
+  PRIMARY KEY (jurisdiction, section_a, section_b),
+  CHECK (section_a < section_b),
+  FOREIGN KEY (jurisdiction, section_a) REFERENCES sections(jurisdiction, id) ON DELETE CASCADE,
+  FOREIGN KEY (jurisdiction, section_b) REFERENCES sections(jurisdiction, id) ON DELETE CASCADE
+);
+
+-- Indexes for section_similarity_classifications
+CREATE INDEX IF NOT EXISTS section_similarity_classifications_a_idx
+  ON section_similarity_classifications (jurisdiction, section_a);
+
+CREATE INDEX IF NOT EXISTS section_similarity_classifications_b_idx
+  ON section_similarity_classifications (jurisdiction, section_b);
+
+CREATE INDEX IF NOT EXISTS section_similarity_classifications_class_idx
+  ON section_similarity_classifications (jurisdiction, classification);
+
+-- Index for auditing cross-encoder triage performance
+CREATE INDEX IF NOT EXISTS section_similarity_classifications_ce_label_idx
+  ON section_similarity_classifications (cross_encoder_label)
+  WHERE cross_encoder_label IS NOT NULL;
+
+-- Multi-jurisdiction reporting requirements
+CREATE TABLE IF NOT EXISTS section_reporting (
+  jurisdiction text NOT NULL,
+  id           text NOT NULL,
+  has_reporting boolean NOT NULL,
+  reporting_summary text,
+  analyzed_at  timestamp with time zone NOT NULL,
+  model_used   text,
+  created_at   timestamp with time zone DEFAULT now(),
+  PRIMARY KEY (jurisdiction, id),
+  FOREIGN KEY (jurisdiction, id) REFERENCES sections(jurisdiction, id) ON DELETE CASCADE
+);
+
+-- Indexes for section_reporting
+CREATE INDEX IF NOT EXISTS section_reporting_has_reporting_idx
+  ON section_reporting (jurisdiction, has_reporting)
+  WHERE has_reporting = true;
 
 -- Highlight phrases for reporting requirements
 CREATE TABLE IF NOT EXISTS dc_section_highlights (
