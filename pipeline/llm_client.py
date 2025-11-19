@@ -4,12 +4,13 @@ Unified LLM client wrapper with dual cascade strategies.
 
 This module provides a single interface for calling LLMs with Pydantic validation:
 - Gemini API (primary, with per-model rate limiting and cascade)
-- Groq API (secondary, OpenAI-compatible, 7 models)
+- Groq API (secondary, OpenAI-compatible, 9 models)
+- OpenRouter API (tertiary, OpenAI-compatible with :floor routing for cheapest providers)
 - Ollama (final fallback, local)
 
 Cascade Strategies:
-- "simple" (default): Gemini → Ollama (preserves Groq rate limits)
-- "extended": Gemini → Groq (9 models) → Ollama (maximum resilience)
+- "simple" (default): Gemini → Ollama (preserves Groq/OpenRouter rate limits)
+- "extended": Gemini → Groq (9 models) → OpenRouter (3 models with sticky sessions) → Ollama (maximum resilience)
 
 Key features:
 - Automatic validation and retry via Pydantic
@@ -68,6 +69,7 @@ T = TypeVar('T', bound=BaseModel)
 # API Configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # Cascade strategy configuration
 CASCADE_STRATEGY = os.getenv("LLM_CASCADE_STRATEGY", "extended")  # "simple" or "extended"
@@ -97,6 +99,15 @@ GROQ_MODELS = [
     {"name": "llama-3.1-8b-instant", "rpm": 30, "rpd": 14400, "tpm": 6000},
     {"name": "meta-llama/llama-4-maverick-17b-128e-instruct", "rpm": 30, "rpd": 1000, "tpm": 6000},
     {"name": "meta-llama/llama-4-scout-17b-16e-instruct", "rpm": 30, "rpd": 1000, "tpm": 30000},
+]
+
+# OpenRouter model configurations (OpenAI-compatible API with provider routing)
+# Using :floor suffix to prioritize cheapest providers
+# Conservative rate limits (can be adjusted based on OpenRouter's actual limits)
+OPENROUTER_MODELS = [
+    {"name": "gpt-4o-mini:floor", "rpm": 30, "rpd": 1000, "tpm": 10000},
+    {"name": "gpt-3.5-turbo:floor", "rpm": 30, "rpd": 1000, "tpm": 10000},
+    {"name": "claude-3-haiku:floor", "rpm": 30, "rpd": 1000, "tpm": 10000},
 ]
 
 OLLAMA_HOST = "http://localhost:11434"
@@ -214,13 +225,20 @@ class LLMClient:
             'last_gemini_call_time': 0,
             'last_gemini_attempt_time': 0,
             'last_groq_attempt_time': 0,
+            'last_openrouter_attempt_time': 0,
             'last_gemini_fail_time': 0,
 
             # Fallback state
             'using_fallback': False,
             'using_groq_fallback': False,
+            'using_openrouter_fallback': False,
             'fallback_to_ollama_logged': False,
             'groq_fallback_logged': False,
+            'openrouter_fallback_logged': False,
+
+            # OpenRouter sticky session tracking
+            'openrouter_sticky_calls': 0,  # Count of consecutive OpenRouter calls
+            'openrouter_sticky_target': 15,  # Stay on OpenRouter for 10-20 calls (using 15 as middle)
 
             # Per-model call counts
             'model_call_counts': {},
@@ -231,6 +249,7 @@ class LLMClient:
             # Tier time tracking
             'time_on_gemini': 0,
             'time_on_groq': 0,
+            'time_on_openrouter': 0,
             'time_on_ollama': 0,
             'last_tier_switch_time': time.time()
         }
@@ -238,7 +257,7 @@ class LLMClient:
         # Log initialization
         strategy_desc = {
             'simple': 'Gemini (4) → Ollama (1)',
-            'extended': 'Gemini (4) → Groq (9) → Ollama (1)'
+            'extended': 'Gemini (4) → Groq (9) → OpenRouter (3 with sticky) → Ollama (1)'
         }
         logger.info(f"LLM Client initialized with '{self.cascade_strategy}' cascade strategy:")
         logger.info(f"  {strategy_desc[self.cascade_strategy]}")
@@ -265,6 +284,8 @@ class LLMClient:
                 self.stats['time_on_gemini'] += time_on_current
             elif any(previous_model in m['name'] for m in GROQ_MODELS):
                 self.stats['time_on_groq'] += time_on_current
+            elif any(previous_model in m['name'] for m in OPENROUTER_MODELS):
+                self.stats['time_on_openrouter'] += time_on_current
             elif previous_model == OLLAMA_MODEL:
                 self.stats['time_on_ollama'] += time_on_current
 
@@ -676,12 +697,121 @@ Return only the JSON object, nothing else."""
             logger.error(f"Unexpected error with Groq ({model_name}): {e}")
             return None
 
+    def _call_openrouter_with_instructor(
+        self,
+        prompt: str,
+        response_model: Type[T],
+        model_name: str,
+        max_retries: int = 3
+    ) -> Optional[T]:
+        """
+        Call OpenRouter API (OpenAI-compatible) with structured outputs.
+
+        Args:
+            prompt: The prompt to send to the LLM
+            response_model: Pydantic model class for validation
+            model_name: OpenRouter model name with :floor suffix (e.g., "gpt-4o-mini:floor")
+            max_retries: Number of validation retries
+
+        Returns:
+            Validated Pydantic model instance or None if failed
+        """
+        if not OPENROUTER_API_KEY:
+            logger.debug("OPENROUTER_API_KEY not set, skipping OpenRouter")
+            return None
+
+        try:
+            # Use requests to call OpenRouter API (OpenAI-compatible)
+            schema_json = response_model.model_json_schema()
+            schema_str = str(schema_json)
+
+            structured_prompt = f"""{prompt}
+
+IMPORTANT: Respond with VALID JSON ONLY (no markdown, no explanations) that matches this exact schema:
+{schema_str}
+
+Return only the JSON object, nothing else."""
+
+            # Retry loop for validation errors
+            for attempt in range(max_retries):
+                response = requests.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": "https://github.com/deproceduralizer",  # Optional, for rankings
+                        "X-Title": "DC Code Deproceduralizer",  # Optional, for rankings
+                    },
+                    json={
+                        "model": model_name,
+                        "messages": [{"role": "user", "content": structured_prompt}],
+                        "temperature": 0.1,
+                        "max_tokens": 30000
+                    },
+                    timeout=30
+                )
+
+                # Check for rate limiting
+                if response.status_code == 429:
+                    logger.debug(f"OpenRouter rate limited for {model_name}")
+                    return None
+
+                response.raise_for_status()
+                data = response.json()
+
+                response_text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+                # Try to parse and validate with Pydantic
+                try:
+                    import re
+                    import json
+
+                    # Try direct parse
+                    try:
+                        json_data = json.loads(response_text.strip())
+                    except json.JSONDecodeError:
+                        # Extract from markdown block
+                        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+                        if json_match:
+                            json_data = json.loads(json_match.group(1))
+                        else:
+                            # Find first {...} object
+                            obj_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text, re.DOTALL)
+                            if obj_match:
+                                json_data = json.loads(obj_match.group(0))
+                            else:
+                                raise json.JSONDecodeError("No JSON found", response_text, 0)
+
+                    # Validate with Pydantic
+                    validated = response_model.model_validate(json_data)
+                    return validated
+
+                except Exception as e:
+                    logger.debug(f"Validation error (attempt {attempt + 1}/{max_retries}): {e}")
+                    if attempt == max_retries - 1:
+                        logger.error(f"Failed to validate after {max_retries} attempts with {model_name}")
+                        return None
+                    # Continue to next retry
+                    continue
+
+            return None
+
+        except requests.exceptions.Timeout:
+            logger.debug(f"Timeout calling OpenRouter API ({model_name})")
+            return None
+        except requests.exceptions.RequestException as e:
+            logger.debug(f"Error calling OpenRouter API ({model_name}): {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error with OpenRouter ({model_name}): {e}")
+            return None
+
     def _try_model(
         self,
         model_config: dict,
         prompt: str,
         response_model: Type[T],
-        tier: str  # "gemini" or "groq"
+        tier: str  # "gemini", "groq", or "openrouter"
     ) -> tuple[Optional[T], str]:
         """
         Try a single model and return (result, model_name) or (None, model_name).
@@ -708,6 +838,8 @@ Return only the JSON object, nothing else."""
             result = self._call_gemini_with_instructor(prompt, response_model, model_name)
         elif tier == "groq":
             result = self._call_groq_with_instructor(prompt, response_model, model_name)
+        elif tier == "openrouter":
+            result = self._call_openrouter_with_instructor(prompt, response_model, model_name)
         else:
             return (None, model_name)
 
@@ -807,15 +939,31 @@ Return only the JSON object, nothing else."""
         last_gemini_fail = self.stats.get('last_gemini_fail_time', 0)
         using_fallback = self.stats.get('using_fallback', False)
         using_groq_fallback = self.stats.get('using_groq_fallback', False)
+        using_openrouter_fallback = self.stats.get('using_openrouter_fallback', False)
+
+        # Check if we're in an active OpenRouter sticky session
+        openrouter_sticky_calls = self.stats.get('openrouter_sticky_calls', 0)
+        openrouter_sticky_target = self.stats.get('openrouter_sticky_target', 15)
+        in_sticky_session = using_openrouter_fallback and openrouter_sticky_calls < openrouter_sticky_target
+
+        # If sticky session complete, reset and try higher tiers
+        if using_openrouter_fallback and openrouter_sticky_calls >= openrouter_sticky_target:
+            logger.info(f"✓ OpenRouter sticky session complete ({openrouter_sticky_calls} calls), retrying higher tiers")
+            self.stats['openrouter_sticky_calls'] = 0
+            self.stats['using_openrouter_fallback'] = False
+            using_openrouter_fallback = False
+            in_sticky_session = False
 
         # If we're using fallback and it's been 3+ minutes, try Gemini again
         should_retry_gemini = (
-            (using_fallback or using_groq_fallback) and
-            (current_time - last_gemini_fail) >= GEMINI_RETRY_INTERVAL
+            (using_fallback or using_groq_fallback or using_openrouter_fallback) and
+            (current_time - last_gemini_fail) >= GEMINI_RETRY_INTERVAL and
+            not in_sticky_session  # Don't retry Gemini if we're in sticky session
         )
 
         # === TIER 1: Try Gemini models ===
-        if GEMINI_API_KEY and (not using_fallback or should_retry_gemini):
+        # Skip Gemini if we're in an active OpenRouter sticky session
+        if GEMINI_API_KEY and (not using_fallback or should_retry_gemini) and not in_sticky_session:
             if should_retry_gemini:
                 current_model = self.stats.get('current_model', 'unknown')
                 calls = self.stats.get('current_model_calls', 0)
@@ -868,7 +1016,8 @@ Return only the JSON object, nothing else."""
         self.stats['last_gemini_fail_time'] = current_time
 
         # === TIER 2: Try Groq models (extended strategy only) ===
-        if self.cascade_strategy == "extended" and GROQ_API_KEY:
+        # Skip Groq if we're in an active OpenRouter sticky session
+        if self.cascade_strategy == "extended" and GROQ_API_KEY and not in_sticky_session:
             self.stats['last_groq_attempt_time'] = current_time
 
             for i, model_config in enumerate(GROQ_MODELS):
@@ -904,10 +1053,55 @@ Return only the JSON object, nothing else."""
                     if i < len(GROQ_MODELS) - 1:  # Don't delay after the last model
                         time.sleep(0.5)
 
-        # === TIER 3: Fallback to Ollama ===
+        # === TIER 3: Try OpenRouter models (extended strategy only) ===
+        if self.cascade_strategy == "extended" and OPENROUTER_API_KEY:
+            self.stats['last_openrouter_attempt_time'] = current_time
+
+            for i, model_config in enumerate(OPENROUTER_MODELS):
+                model_name = model_config["name"]
+
+                # Check rate limits for this specific model
+                if not self.rate_limiter.wait_if_needed(model_config):
+                    logger.debug(f"{model_name} rate limited, trying next model")
+                    continue
+
+                # Log model switch if changing
+                if not self.stats.get('openrouter_fallback_logged'):
+                    logger.info(f"⚡ Groq exhausted, trying OpenRouter tier (with sticky sessions)")
+                    self.stats['openrouter_fallback_logged'] = True
+
+                self._log_model_switch(model_name, "Groq exhausted")
+
+                result = self._call_openrouter_with_instructor(prompt, response_model, model_name)
+
+                if result:
+                    self.rate_limiter.record_call(model_config)
+                    logger.debug(f"Successfully used OpenRouter {model_name}" + (f" for {section_id}" if section_id else ""))
+
+                    # Track call count
+                    self.stats['current_model_calls'] += 1
+                    self.stats['model_call_counts'][model_name] = self.stats['model_call_counts'].get(model_name, 0) + 1
+                    self.stats['using_openrouter_fallback'] = True
+
+                    # Increment sticky session counter
+                    self.stats['openrouter_sticky_calls'] += 1
+
+                    # Log sticky session status
+                    sticky_remaining = self.stats['openrouter_sticky_target'] - self.stats['openrouter_sticky_calls']
+                    if sticky_remaining > 0:
+                        logger.debug(f"OpenRouter sticky session: {self.stats['openrouter_sticky_calls']}/{self.stats['openrouter_sticky_target']} calls (will retry higher tiers in {sticky_remaining} calls)")
+
+                    return LLMResponse(data=result, model_used=model_name)
+                else:
+                    logger.debug(f"Failed with OpenRouter {model_name}, trying next model")
+                    # Add delay between failed OpenRouter attempts to avoid rapid cycling
+                    if i < len(OPENROUTER_MODELS) - 1:  # Don't delay after the last model
+                        time.sleep(0.5)
+
+        # === TIER 4: Fallback to Ollama ===
         if not self.stats.get('fallback_to_ollama_logged'):
             if self.cascade_strategy == "extended":
-                logger.info(f"⚠ All Gemini and Groq models exhausted, falling back to Ollama {OLLAMA_MODEL}")
+                logger.info(f"⚠ All Gemini, Groq, and OpenRouter models exhausted, falling back to Ollama {OLLAMA_MODEL}")
             else:
                 logger.info(f"⚠ All Gemini models exhausted, falling back to Ollama {OLLAMA_MODEL}")
             logger.info(f"  Will retry Gemini every {GEMINI_RETRY_INTERVAL}s")
@@ -985,6 +1179,16 @@ Return only the JSON object, nothing else."""
                 groq_seconds = int(self.stats['time_on_groq'] % 60)
                 groq_switches = len([s for s in self.stats['tier_switches'] if any(s['to'] in m['name'] for m in GROQ_MODELS)])
                 lines.append(f"  ├─ Groq: {groq_calls} calls ({groq_minutes}m {groq_seconds}s, {groq_switches} fallback periods)")
+
+        # OpenRouter stats (if extended strategy)
+        if self.cascade_strategy == "extended":
+            openrouter_calls = sum(count for model, count in sorted_models if any(model in m['name'] for m in OPENROUTER_MODELS))
+            if openrouter_calls > 0:
+                openrouter_minutes = int(self.stats['time_on_openrouter'] // 60)
+                openrouter_seconds = int(self.stats['time_on_openrouter'] % 60)
+                openrouter_switches = len([s for s in self.stats['tier_switches'] if any(s['to'] in m['name'] for m in OPENROUTER_MODELS)])
+                sticky_calls = self.stats.get('openrouter_sticky_calls', 0)
+                lines.append(f"  ├─ OpenRouter: {openrouter_calls} calls ({openrouter_minutes}m {openrouter_seconds}s, {openrouter_switches} fallback periods, {sticky_calls} sticky calls)")
 
         # Ollama stats
         ollama_calls = self.stats['model_call_counts'].get(OLLAMA_MODEL, 0)
