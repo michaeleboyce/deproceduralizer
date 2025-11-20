@@ -52,6 +52,16 @@ function SearchPageContent() {
   const [availableObligationCategories, setAvailableObligationCategories] = useState<string[]>([]);
   const [selectedObligationCategories, setSelectedObligationCategories] = useState<string[]>([]);
 
+  // Implementation filter state
+  const [hasImplementationIssues, setHasImplementationIssues] = useState(false);
+  const [implementationComplexity, setImplementationComplexity] = useState("");
+  const [availableComplexityLevels, setAvailableComplexityLevels] = useState<string[]>([]);
+
+  // Anachronism filter state
+  const [hasAnachronisms, setHasAnachronisms] = useState(false);
+  const [anachronismSeverity, setAnachronismSeverity] = useState("");
+  const [availableSeverityLevels, setAvailableSeverityLevels] = useState<string[]>([]);
+
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -77,6 +87,20 @@ function SearchPageContent() {
     loadObligationCategories(query, selectedTitle, selectedChapter, hasReporting);
   }, [query, selectedTitle, selectedChapter, hasReporting]);
 
+  // Load implementation complexity levels based on current filters
+  useEffect(() => {
+    if (hasImplementationIssues) {
+      loadComplexityLevels(query, selectedTitle, selectedChapter, hasReporting);
+    }
+  }, [hasImplementationIssues, query, selectedTitle, selectedChapter, hasReporting]);
+
+  // Load anachronism severity levels based on current filters
+  useEffect(() => {
+    if (hasAnachronisms) {
+      loadSeverityLevels(query, selectedTitle, selectedChapter, hasReporting);
+    }
+  }, [hasAnachronisms, query, selectedTitle, selectedChapter, hasReporting]);
+
   // Auto-search from URL params
   useEffect(() => {
     const urlQuery = searchParams.get("q") || searchParams.get("query") || "";
@@ -88,9 +112,13 @@ function SearchPageContent() {
     const urlMaxSimilarity = parseInt(searchParams.get("maxSimilarity") || "100", 10);
     const urlSimilarityClassification = searchParams.get("similarityClassification") || "";
     const urlObligationCategories = searchParams.get("obligationCategory")?.split(",").filter(Boolean) || [];
+    const urlHasImplementationIssues = searchParams.get("hasImplementationIssues") === "true";
+    const urlImplementationComplexity = searchParams.get("implementationComplexity") || "";
+    const urlHasAnachronisms = searchParams.get("hasAnachronisms") === "true";
+    const urlAnachronismSeverity = searchParams.get("anachronismSeverity") || "";
     const urlPage = parseInt(searchParams.get("page") || "1", 10);
 
-    if (urlQuery || urlTitle || urlChapter || urlHasReporting || urlHasSimilar || urlSimilarityClassification || urlObligationCategories.length > 0) {
+    if (urlQuery || urlTitle || urlChapter || urlHasReporting || urlHasSimilar || urlSimilarityClassification || urlObligationCategories.length > 0 || urlHasImplementationIssues || urlHasAnachronisms) {
       setQuery(urlQuery);
       setSelectedTitle(urlTitle);
       setSelectedChapter(urlChapter);
@@ -100,8 +128,12 @@ function SearchPageContent() {
       setMaxSimilarity(urlMaxSimilarity);
       setSimilarityClassification(urlSimilarityClassification);
       setSelectedObligationCategories(urlObligationCategories);
+      setHasImplementationIssues(urlHasImplementationIssues);
+      setImplementationComplexity(urlImplementationComplexity);
+      setHasAnachronisms(urlHasAnachronisms);
+      setAnachronismSeverity(urlAnachronismSeverity);
       setCurrentPage(urlPage);
-      performSearch(urlQuery, urlTitle, urlChapter, urlHasReporting, urlHasSimilar, urlMinSimilarity, urlMaxSimilarity, urlSimilarityClassification, urlObligationCategories, urlPage);
+      performSearch(urlQuery, urlTitle, urlChapter, urlHasReporting, urlHasSimilar, urlMinSimilarity, urlMaxSimilarity, urlSimilarityClassification, urlObligationCategories, urlHasImplementationIssues, urlImplementationComplexity, urlHasAnachronisms, urlAnachronismSeverity, urlPage);
     }
   }, [searchParams]);
 
@@ -148,6 +180,48 @@ function SearchPageContent() {
     }
   };
 
+  const loadComplexityLevels = async (
+    searchQuery: string = "",
+    title: string = "",
+    chapter: string = "",
+    reporting: boolean = false
+  ) => {
+    try {
+      const params = new URLSearchParams();
+      if (searchQuery) params.append("query", searchQuery);
+      if (title) params.append("title", title);
+      if (chapter) params.append("chapter", chapter);
+      if (reporting) params.append("hasReporting", "true");
+
+      const response = await fetch(`/api/filters/implementations?${params.toString()}`);
+      const data = await response.json();
+      setAvailableComplexityLevels(data.complexityLevels || []);
+    } catch (err) {
+      console.error("Failed to load implementation complexity levels:", err);
+    }
+  };
+
+  const loadSeverityLevels = async (
+    searchQuery: string = "",
+    title: string = "",
+    chapter: string = "",
+    reporting: boolean = false
+  ) => {
+    try {
+      const params = new URLSearchParams();
+      if (searchQuery) params.append("query", searchQuery);
+      if (title) params.append("title", title);
+      if (chapter) params.append("chapter", chapter);
+      if (reporting) params.append("hasReporting", "true");
+
+      const response = await fetch(`/api/filters/anachronisms?${params.toString()}`);
+      const data = await response.json();
+      setAvailableSeverityLevels(data.severityLevels || []);
+    } catch (err) {
+      console.error("Failed to load anachronism severity levels:", err);
+    }
+  };
+
   const performSearch = async (
     searchQuery: string,
     title: string = selectedTitle,
@@ -158,6 +232,10 @@ function SearchPageContent() {
     maxSim: number = maxSimilarity,
     simClassification: string = similarityClassification,
     obligationCats: string[] = selectedObligationCategories,
+    implIssues: boolean = hasImplementationIssues,
+    implComplexity: string = implementationComplexity,
+    anachronism: boolean = hasAnachronisms,
+    anacSeverity: string = anachronismSeverity,
     page: number = currentPage
   ) => {
     setLoading(true);
@@ -175,6 +253,10 @@ function SearchPageContent() {
       if (similar && maxSim < 100) params.append("maxSimilarity", (maxSim / 100).toString());
       if (simClassification) params.append("similarityClassification", simClassification);
       if (obligationCats && obligationCats.length > 0) params.append("obligationCategory", obligationCats.join(","));
+      if (implIssues) params.append("hasImplementationIssues", "true");
+      if (implComplexity) params.append("implementationComplexity", implComplexity);
+      if (anachronism) params.append("hasAnachronisms", "true");
+      if (anacSeverity) params.append("anachronismSeverity", anacSeverity);
       params.append("page", page.toString());
 
       const response = await fetch(`/api/search?${params.toString()}`);
@@ -199,21 +281,21 @@ function SearchPageContent() {
   const handleSearch = (e: FormEvent) => {
     e.preventDefault();
     setCurrentPage(1);
-    updateURL(query, selectedTitle, selectedChapter, hasReporting, hasSimilar, minSimilarity, maxSimilarity, similarityClassification, selectedObligationCategories, 1);
+    updateURL(query, selectedTitle, selectedChapter, hasReporting, hasSimilar, minSimilarity, maxSimilarity, similarityClassification, selectedObligationCategories, hasImplementationIssues, implementationComplexity, hasAnachronisms, anachronismSeverity, 1);
   };
 
   const handleFilterChange = () => {
     setCurrentPage(1);
-    updateURL(query, selectedTitle, selectedChapter, hasReporting, hasSimilar, minSimilarity, maxSimilarity, similarityClassification, selectedObligationCategories, 1);
+    updateURL(query, selectedTitle, selectedChapter, hasReporting, hasSimilar, minSimilarity, maxSimilarity, similarityClassification, selectedObligationCategories, hasImplementationIssues, implementationComplexity, hasAnachronisms, anachronismSeverity, 1);
   };
 
   const handlePageChange = (newPage: number) => {
     setCurrentPage(newPage);
-    updateURL(query, selectedTitle, selectedChapter, hasReporting, hasSimilar, minSimilarity, maxSimilarity, similarityClassification, selectedObligationCategories, newPage);
+    updateURL(query, selectedTitle, selectedChapter, hasReporting, hasSimilar, minSimilarity, maxSimilarity, similarityClassification, selectedObligationCategories, hasImplementationIssues, implementationComplexity, hasAnachronisms, anachronismSeverity, newPage);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const updateURL = (q: string, title: string, chapter: string, reporting: boolean, similar: boolean, minSim: number, maxSim: number, simClass: string, obligationCats: string[], page: number) => {
+  const updateURL = (q: string, title: string, chapter: string, reporting: boolean, similar: boolean, minSim: number, maxSim: number, simClass: string, obligationCats: string[], implIssues: boolean, implComplexity: string, anachronism: boolean, anacSeverity: string, page: number) => {
     const params = new URLSearchParams();
     if (q.trim()) params.append("q", q);
     if (title) params.append("title", title);
@@ -224,6 +306,10 @@ function SearchPageContent() {
     if (similar && maxSim < 100) params.append("maxSimilarity", maxSim.toString());
     if (simClass) params.append("similarityClassification", simClass);
     if (obligationCats && obligationCats.length > 0) params.append("obligationCategory", obligationCats.join(","));
+    if (implIssues) params.append("hasImplementationIssues", "true");
+    if (implComplexity) params.append("implementationComplexity", implComplexity);
+    if (anachronism) params.append("hasAnachronisms", "true");
+    if (anacSeverity) params.append("anachronismSeverity", anacSeverity);
     if (page > 1) params.append("page", page.toString());
 
     router.push(`/search?${params.toString()}`);
@@ -238,11 +324,15 @@ function SearchPageContent() {
     setMaxSimilarity(100);
     setSimilarityClassification("");
     setSelectedObligationCategories([]);
+    setHasImplementationIssues(false);
+    setImplementationComplexity("");
+    setHasAnachronisms(false);
+    setAnachronismSeverity("");
     setCurrentPage(1);
-    updateURL(query, "", "", false, false, 70, 100, "", [], 1);
+    updateURL(query, "", "", false, false, 70, 100, "", [], false, "", false, "", 1);
   };
 
-  const hasActiveFilters = selectedTitle || selectedChapter || hasReporting || hasSimilar || similarityClassification || selectedObligationCategories.length > 0;
+  const hasActiveFilters = selectedTitle || selectedChapter || hasReporting || hasSimilar || similarityClassification || selectedObligationCategories.length > 0 || hasImplementationIssues || hasAnachronisms;
 
   const toggleObligationCategory = (category: string) => {
     setSelectedObligationCategories(prev =>
@@ -509,6 +599,74 @@ function SearchPageContent() {
               </div>
             </div>
 
+            {/* Implementation Issues Filters Row */}
+            <div className="mt-4 pt-4 border-t border-slate-200">
+              <div className="flex items-center gap-4 flex-wrap">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={hasImplementationIssues}
+                    onChange={(e) => setHasImplementationIssues(e.target.checked)}
+                    disabled={loading}
+                    className="w-4 h-4 text-teal-700 border-slate-300 rounded focus:ring-teal-500"
+                  />
+                  <span className="text-sm font-medium text-slate-700">
+                    Has implementation issues
+                  </span>
+                </label>
+                {hasImplementationIssues && (
+                  <select
+                    value={implementationComplexity}
+                    onChange={(e) => setImplementationComplexity(e.target.value)}
+                    disabled={loading}
+                    className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg
+                               focus:outline-none focus:ring-2 focus:ring-teal-500 text-slate-900 bg-white"
+                  >
+                    <option value="">All Complexity Levels</option>
+                    {availableComplexityLevels.map((level) => (
+                      <option key={level} value={level}>
+                        {level}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+
+            {/* Anachronism Filters Row */}
+            <div className="mt-4 pt-4 border-t border-slate-200">
+              <div className="flex items-center gap-4 flex-wrap">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={hasAnachronisms}
+                    onChange={(e) => setHasAnachronisms(e.target.checked)}
+                    disabled={loading}
+                    className="w-4 h-4 text-teal-700 border-slate-300 rounded focus:ring-teal-500"
+                  />
+                  <span className="text-sm font-medium text-slate-700">
+                    Has anachronisms
+                  </span>
+                </label>
+                {hasAnachronisms && (
+                  <select
+                    value={anachronismSeverity}
+                    onChange={(e) => setAnachronismSeverity(e.target.value)}
+                    disabled={loading}
+                    className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg
+                               focus:outline-none focus:ring-2 focus:ring-teal-500 text-slate-900 bg-white"
+                  >
+                    <option value="">All Severity Levels</option>
+                    {availableSeverityLevels.map((level) => (
+                      <option key={level} value={level}>
+                        {level}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+
             <div className="flex gap-2 items-end mt-4">
                 <button
                   type="button"
@@ -617,6 +775,36 @@ function SearchPageContent() {
                     </button>
                   </span>
                 ))}
+                {hasImplementationIssues && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1
+                                   bg-purple-100 text-purple-800 rounded-full text-sm font-medium">
+                    Implementation Issues{implementationComplexity ? `: ${implementationComplexity}` : ""}
+                    <button
+                      onClick={() => {
+                        setHasImplementationIssues(false);
+                        setImplementationComplexity("");
+                      }}
+                      className="hover:text-purple-900 text-lg leading-none"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+                {hasAnachronisms && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1
+                                   bg-orange-100 text-orange-800 rounded-full text-sm font-medium">
+                    Anachronisms{anachronismSeverity ? `: ${anachronismSeverity}` : ""}
+                    <button
+                      onClick={() => {
+                        setHasAnachronisms(false);
+                        setAnachronismSeverity("");
+                      }}
+                      className="hover:text-orange-900 text-lg leading-none"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
               </div>
             )}
           </div>

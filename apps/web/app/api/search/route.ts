@@ -24,6 +24,10 @@ export async function GET(request: Request) {
     const maxSimilarity = parseFloat(searchParams.get("maxSimilarity") || "1.0");
     const similarityClassification = searchParams.get("similarityClassification");
     const obligationCategories = searchParams.get("obligationCategory")?.split(",").filter(Boolean);
+    const hasImplementationIssues = searchParams.get("hasImplementationIssues") === "true";
+    const implementationComplexity = searchParams.get("implementationComplexity");
+    const hasAnachronisms = searchParams.get("hasAnachronisms") === "true";
+    const anachronismSeverity = searchParams.get("anachronismSeverity");
     const page = parseInt(searchParams.get("page") || "1", 10);
     const limit = parseInt(searchParams.get("limit") || "20", 10);
 
@@ -39,8 +43,14 @@ export async function GET(request: Request) {
     // Check if we need obligations filtering
     const needsObligationsJoin = obligationCategories && obligationCategories.length > 0;
 
-    if (needsSimilarityJoin || needsObligationsJoin) {
-      // Complex query with similarity and/or obligations joins
+    // Check if we need implementation filtering
+    const needsImplementationJoin = hasImplementationIssues;
+
+    // Check if we need anachronism filtering
+    const needsAnachronismJoin = hasAnachronisms;
+
+    if (needsSimilarityJoin || needsObligationsJoin || needsImplementationJoin || needsAnachronismJoin) {
+      // Complex query with similarity, obligations, implementation, and/or anachronism joins
       const baseSql = sql`
         SELECT DISTINCT
           s.id,
@@ -70,6 +80,22 @@ export async function GET(request: Request) {
             obl.jurisdiction = ${jurisdiction}
             AND obl.section_id = s.id
             AND obl.category = ANY(${sql`ARRAY[${sql.join(obligationCategories!.map(c => sql`${c}`), sql`, `)}]::text[]`})
+          )
+        ` : sql``}
+        ${needsImplementationJoin ? sql`
+          INNER JOIN section_pahlka_implementations pi ON (
+            pi.jurisdiction = ${jurisdiction}
+            AND pi.section_id = s.id
+            AND pi.has_implementation_issues = true
+            ${implementationComplexity ? sql`AND pi.overall_complexity = ${implementationComplexity}` : sql``}
+          )
+        ` : sql``}
+        ${needsAnachronismJoin ? sql`
+          INNER JOIN section_anachronisms sa ON (
+            sa.jurisdiction = ${jurisdiction}
+            AND sa.section_id = s.id
+            AND sa.has_anachronism = true
+            ${anachronismSeverity ? sql`AND sa.overall_severity = ${anachronismSeverity}` : sql``}
           )
         ` : sql``}
         WHERE s.jurisdiction = ${jurisdiction}
@@ -107,6 +133,22 @@ export async function GET(request: Request) {
             AND obl.category = ANY(${sql`ARRAY[${sql.join(obligationCategories!.map(c => sql`${c}`), sql`, `)}]::text[]`})
           )
         ` : sql``}
+        ${needsImplementationJoin ? sql`
+          INNER JOIN section_pahlka_implementations pi ON (
+            pi.jurisdiction = ${jurisdiction}
+            AND pi.section_id = s.id
+            AND pi.has_implementation_issues = true
+            ${implementationComplexity ? sql`AND pi.overall_complexity = ${implementationComplexity}` : sql``}
+          )
+        ` : sql``}
+        ${needsAnachronismJoin ? sql`
+          INNER JOIN section_anachronisms sa ON (
+            sa.jurisdiction = ${jurisdiction}
+            AND sa.section_id = s.id
+            AND sa.has_anachronism = true
+            ${anachronismSeverity ? sql`AND sa.overall_severity = ${anachronismSeverity}` : sql``}
+          )
+        ` : sql``}
         WHERE s.jurisdiction = ${jurisdiction}
         ${query && query.trim() ? sql`AND s.text_fts @@ plainto_tsquery('english', ${query})` : sql``}
         ${title && title.trim() ? sql`AND s.title_label = ${title}` : sql``}
@@ -137,6 +179,10 @@ export async function GET(request: Request) {
           maxSimilarity: maxSimilarity,
           similarityClassification: similarityClassification || null,
           obligationCategories: obligationCategories || null,
+          hasImplementationIssues: hasImplementationIssues,
+          implementationComplexity: implementationComplexity || null,
+          hasAnachronisms: hasAnachronisms,
+          anachronismSeverity: anachronismSeverity || null,
         },
       });
     } else {

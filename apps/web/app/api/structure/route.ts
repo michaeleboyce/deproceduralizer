@@ -9,17 +9,24 @@ export async function GET(request: Request) {
     const jurisdiction = getCurrentJurisdiction();
 
     // Fetch all structure nodes for the jurisdiction
+    // LEFT JOIN with sections to verify which structure nodes have actual section content
     const structures = await sql`
       SELECT
-        id,
-        parent_id,
-        level,
-        label,
-        heading,
-        ordinal
-      FROM structure
-      WHERE jurisdiction = ${jurisdiction}
-      ORDER BY ordinal ASC
+        str.id,
+        str.parent_id,
+        str.level,
+        str.label,
+        str.heading,
+        str.ordinal,
+        CASE WHEN s.id IS NOT NULL THEN true ELSE false END as has_section,
+        s.id as section_id
+      FROM structure str
+      LEFT JOIN sections s ON (
+        s.jurisdiction = str.jurisdiction
+        AND s.id = str.id
+      )
+      WHERE str.jurisdiction = ${jurisdiction}
+      ORDER BY str.ordinal ASC
     `;
 
     // Build hierarchical tree structure
@@ -46,6 +53,8 @@ interface StructureNode {
   label: string;
   heading: string;
   ordinal: number;
+  has_section: boolean;
+  section_id: string | null;
   children?: StructureNode[];
 }
 

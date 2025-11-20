@@ -11,6 +11,8 @@ interface StructureNode {
   label: string;
   heading: string;
   ordinal: number;
+  has_section: boolean;
+  section_id: string | null;
   children?: StructureNode[];
 }
 
@@ -61,8 +63,8 @@ export default function StructureNavigator({ className = '' }: StructureNavigato
     const isExpanded = expanded.has(node.id);
     const paddingLeft = `${depth * 1.25}rem`;
 
-    // Determine if this is a clickable section or just a container
-    const isSection = node.level !== 'title' && node.level !== 'chapter' && node.level !== 'subchapter';
+    // Only show "View →" link for nodes that have actual section content
+    const linkId = node.section_id || node.id;
 
     return (
       <div key={node.id} className="select-none">
@@ -100,10 +102,10 @@ export default function StructureNavigator({ className = '' }: StructureNavigato
             </span>
           </div>
 
-          {/* View link for sections */}
-          {isSection && (
+          {/* View link - only shown for nodes with actual section content */}
+          {node.has_section && (
             <Link
-              href={`/section/${node.id}`}
+              href={`/section/${linkId}`}
               className="flex-shrink-0 ml-2 px-2 py-0.5 text-xs font-medium text-slate-500
                          hover:text-slate-700 hover:bg-slate-100 rounded opacity-0 group-hover:opacity-100 transition-all"
               onClick={(e) => e.stopPropagation()}
