@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Navigation from "@/components/Navigation";
+import { CitationLink } from "@/components/CitationLink";
 import { Suspense } from "react";
 
 interface ImplementationIndicator {
@@ -74,6 +75,7 @@ function PahlkaImplementationsPageContent() {
   const [appliedChapter, setAppliedChapter] = useState("");
   const [appliedRequiresTechnicalReview, setAppliedRequiresTechnicalReview] = useState(false);
   const [appliedSearchQuery, setAppliedSearchQuery] = useState("");
+  const [appliedSortBy, setAppliedSortBy] = useState("complexity");
 
   // Available options
   const [allCategories, setAllCategories] = useState<Array<{ category: string; count: number }>>([]);
@@ -81,6 +83,47 @@ function PahlkaImplementationsPageContent() {
   const [technicalReviewStats, setTechnicalReviewStats] = useState<{ requires_review: number; total: number }>({ requires_review: 0, total: 0 });
   const [availableTitles, setAvailableTitles] = useState<string[]>([]);
   const [availableChapters, setAvailableChapters] = useState<string[]>([]);
+
+  // Expand/collapse state for text truncation (track by indicator id)
+  const [expandedExplanations, setExpandedExplanations] = useState<Set<number>>(new Set());
+  const [expandedApproaches, setExpandedApproaches] = useState<Set<number>>(new Set());
+  const [expandedPhrases, setExpandedPhrases] = useState<Set<number>>(new Set());
+
+  const toggleExplanation = (indicatorId: number) => {
+    setExpandedExplanations(prev => {
+      const next = new Set(prev);
+      if (next.has(indicatorId)) {
+        next.delete(indicatorId);
+      } else {
+        next.add(indicatorId);
+      }
+      return next;
+    });
+  };
+
+  const toggleApproach = (indicatorId: number) => {
+    setExpandedApproaches(prev => {
+      const next = new Set(prev);
+      if (next.has(indicatorId)) {
+        next.delete(indicatorId);
+      } else {
+        next.add(indicatorId);
+      }
+      return next;
+    });
+  };
+
+  const togglePhrases = (indicatorId: number) => {
+    setExpandedPhrases(prev => {
+      const next = new Set(prev);
+      if (next.has(indicatorId)) {
+        next.delete(indicatorId);
+      } else {
+        next.add(indicatorId);
+      }
+      return next;
+    });
+  };
 
   // Load titles on mount
   useEffect(() => {
@@ -121,6 +164,7 @@ function PahlkaImplementationsPageContent() {
     setAppliedChapter(urlChapter);
     setAppliedRequiresTechnicalReview(urlRequiresTechnicalReview);
     setAppliedSearchQuery(urlSearchQuery);
+    setAppliedSortBy(urlSortBy);
 
     fetchImplementationData(urlComplexity, urlCategory, urlTitle, urlChapter, urlRequiresTechnicalReview, urlSearchQuery, urlSortBy);
   }, [searchParams]);
@@ -394,15 +438,18 @@ function PahlkaImplementationsPageContent() {
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Sort By
+                <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
+                  (Currently: {appliedSortBy === 'complexity' ? 'Complexity ↓' : appliedSortBy === 'citation' ? 'Citation ↑' : 'Heading ↑'})
+                </span>
               </label>
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
               >
-                <option value="complexity">Complexity</option>
-                <option value="citation">Citation</option>
-                <option value="heading">Heading</option>
+                <option value="complexity">Complexity (High → Low)</option>
+                <option value="citation">Citation (A → Z)</option>
+                <option value="heading">Heading (A → Z)</option>
               </select>
             </div>
           </div>
@@ -489,12 +536,12 @@ function PahlkaImplementationsPageContent() {
                   {/* Section header */}
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">
-                      <Link
-                        href={`/sections/${section.id}`}
-                        className="text-lg font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                      <CitationLink
+                        sectionId={section.id}
+                        className="text-lg font-semibold"
                       >
                         {section.citation}
-                      </Link>
+                      </CitationLink>
                       <p className="text-gray-700 dark:text-gray-300 mt-1">{section.heading}</p>
                       <div className="flex gap-2 mt-2 text-sm text-gray-500 dark:text-gray-400">
                         <span>{section.title_label}</span>
@@ -552,17 +599,37 @@ function PahlkaImplementationsPageContent() {
                             </span>
                           </div>
 
-                          <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">
-                            {indicator.explanation}
-                          </p>
+                          <div className="mb-3">
+                            <p className={`text-sm text-gray-700 dark:text-gray-300 ${!expandedExplanations.has(indicator.id) && indicator.explanation.length > 200 ? 'line-clamp-3' : ''}`}>
+                              {indicator.explanation}
+                            </p>
+                            {indicator.explanation.length > 200 && (
+                              <button
+                                onClick={() => toggleExplanation(indicator.id)}
+                                className="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1"
+                              >
+                                {expandedExplanations.has(indicator.id) ? 'Show Less' : 'Show More'}
+                              </button>
+                            )}
+                          </div>
 
                           {indicator.implementationApproach && (
                             <div className="mb-3">
                               <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
                                 Implementation Approach:
                               </div>
-                              <div className="text-sm text-gray-700 dark:text-gray-300 bg-blue-50 dark:bg-blue-900/20 p-2 rounded">
-                                {indicator.implementationApproach}
+                              <div className="bg-blue-50 dark:bg-blue-900/20 p-2 rounded">
+                                <p className={`text-sm text-gray-700 dark:text-gray-300 ${!expandedApproaches.has(indicator.id) && indicator.implementationApproach.length > 150 ? 'line-clamp-2' : ''}`}>
+                                  {indicator.implementationApproach}
+                                </p>
+                                {indicator.implementationApproach.length > 150 && (
+                                  <button
+                                    onClick={() => toggleApproach(indicator.id)}
+                                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1"
+                                  >
+                                    {expandedApproaches.has(indicator.id) ? 'Show Less' : 'Show More'}
+                                  </button>
+                                )}
                               </div>
                             </div>
                           )}
@@ -581,10 +648,10 @@ function PahlkaImplementationsPageContent() {
                           {indicator.matchedPhrases && indicator.matchedPhrases.length > 0 && (
                             <div>
                               <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
-                                Matched Phrases:
+                                Matched Phrases {indicator.matchedPhrases.length > 5 && `(${indicator.matchedPhrases.length} total)`}:
                               </div>
                               <div className="flex flex-wrap gap-2">
-                                {indicator.matchedPhrases.map((phrase, idx) => (
+                                {(expandedPhrases.has(indicator.id) ? indicator.matchedPhrases : indicator.matchedPhrases.slice(0, 5)).map((phrase, idx) => (
                                   <span
                                     key={idx}
                                     className="inline-flex items-center px-2 py-1 rounded text-xs bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200"
@@ -592,6 +659,16 @@ function PahlkaImplementationsPageContent() {
                                     "{phrase}"
                                   </span>
                                 ))}
+                                {indicator.matchedPhrases.length > 5 && (
+                                  <button
+                                    onClick={() => togglePhrases(indicator.id)}
+                                    className="inline-flex items-center px-2 py-1 rounded text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-900/50"
+                                  >
+                                    {expandedPhrases.has(indicator.id)
+                                      ? 'Show Less'
+                                      : `Show ${indicator.matchedPhrases.length - 5} More`}
+                                  </button>
+                                )}
                               </div>
                             </div>
                           )}

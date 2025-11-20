@@ -166,17 +166,17 @@ ANALYSIS FRAMEWORK - 12 CATEGORIES:
 1. COMPLEXITY_POLICY_DEBT - Cross-reference spaghetti, accreted conditions
    RED FLAG EXAMPLE: "meets criteria in section 202(b)(3)(A)(ii); satisfies 26 U.S.C. 3304(a)(1)(B)"
    BETTER: "household income is below 150% of federal poverty level"
-   DETECT: Multiple section references, USC citations, subsection chains, "in addition to all other requirements"
+   DETECT: 3+ cross-references to other sections/USC in a single requirement, or subsection chains 3+ levels deep (e.g., §1-2(a)(3)(B)(ii)), or compound conditions requiring navigation across multiple external sources
 
 2. OPTIONS_BECOME_REQUIREMENTS - Suggestion lists become checklists
    RED FLAG EXAMPLE: "may include...all controls identified in NIST Special Publication 800-53"
    BETTER: "shall adopt controls proportionate to data sensitivity...not required to adopt every listed control"
-   DETECT: "may include...all", undifferentiated factor lists, exhaustive option menus
+   DETECT: "may include" followed by exhaustive lists (5+ items) without prioritization, or "may consider" followed by "all of the following", or suggestion language combined with comprehensive external standards
 
 3. POLICY_IMPLEMENTATION_SEPARATION - Waterfall, vendor lock-in
    RED FLAG EXAMPLE: "shall establish through contracts with private entities...shall not directly develop or operate"
    BETTER: "shall designate accountable official responsible for how service works...may use contractors but retain ability to change"
-   DETECT: Vendor mandates, waterfall language, separation of design/operations
+   DETECT: Explicit prohibition on government operation/development, mandatory use of specific vendor types, or separation of policy design from implementation responsibility
 
 4. OVERWROUGHT_LEGALESE - Dense definitions that make forms impossible
    RED FLAG EXAMPLE: "gross unearned income as defined in subsection (k)(2)(B)...per Internal Revenue Code §152"
@@ -228,6 +228,13 @@ ANALYSIS FRAMEWORK - 12 CATEGORIES:
     DETECT: Plain language mandates, concrete metrics, burden reduction, pilot authority, outcome focus, regular cleanup
 
 ---
+
+IMPORTANT: Only flag issues that are CLEAR and SUBSTANTIVE matches to the patterns described above.
+- Do not flag minor or tangential instances
+- Require strong evidence in the matched_phrases
+- Be conservative and precise in classifications
+- Avoid over-interpreting routine legal language as problematic
+- Focus on patterns that would genuinely create implementation barriers or burdens
 
 For each issue found, provide:
 - category: [one of the 12 categories above]

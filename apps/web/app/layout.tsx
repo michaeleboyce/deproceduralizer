@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Merriweather, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import Footer from "@/components/Footer";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -37,7 +38,12 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${merriweather.variable} ${jetbrainsMono.variable} antialiased font-sans`}
       >
-        {children}
+        <div className="flex flex-col min-h-screen">
+          <main className="flex-grow">
+            {children}
+          </main>
+          <Footer />
+        </div>
       </body>
     </html>
   );

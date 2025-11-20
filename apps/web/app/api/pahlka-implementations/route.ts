@@ -50,10 +50,17 @@ export async function GET(request: Request) {
       );
     }
 
-    // If category filter is specified, join with indicators
-    const categoryJoinClause = category && category.trim()
-      ? sql`INNER JOIN pahlka_implementation_indicators pii ON pii.jurisdiction = 'dc' AND pii.section_id = pi.section_id AND pii.category = ${category}`
-      : sql``;
+    // Build category filter - need to ensure section has at least one indicator in this category
+    if (category && category.trim()) {
+      whereConditions.push(
+        sql`EXISTS (
+          SELECT 1 FROM pahlka_implementation_indicators pii
+          WHERE pii.jurisdiction = pi.jurisdiction
+          AND pii.section_id = pi.section_id
+          AND pii.category = ${category}
+        )`
+      );
+    }
 
     // Build WHERE clause
     const whereClause = whereConditions.length > 0
@@ -121,7 +128,6 @@ export async function GET(request: Request) {
         COALESCE(ind.indicators, '[]'::json) as indicators
       FROM section_pahlka_implementations pi
       INNER JOIN sections s ON s.jurisdiction = pi.jurisdiction AND s.id = pi.section_id
-      ${categoryJoinClause}
       LEFT JOIN indicators_agg ind ON ind.jurisdiction = pi.jurisdiction AND ind.section_id = pi.section_id
       ${whereClause}
       ${orderByClause}
@@ -134,7 +140,6 @@ export async function GET(request: Request) {
       SELECT COUNT(DISTINCT pi.section_id)::int as count
       FROM section_pahlka_implementations pi
       INNER JOIN sections s ON s.jurisdiction = pi.jurisdiction AND s.id = pi.section_id
-      ${categoryJoinClause}
       ${whereClause}
     `;
 
