@@ -65,7 +65,7 @@ class BaseLoader(ABC):
         self.skipped_count = 0
 
     def get_checkpoint(self) -> int:
-        """Get the last processed byte offset from state file.
+        """Get the last processed byte offset from state file and restore counts.
 
         Returns:
             Byte offset to resume from (0 if no checkpoint exists)
@@ -74,6 +74,11 @@ class BaseLoader(ABC):
             try:
                 with open(self.state_file, 'r') as f:
                     data = json.load(f)
+                    # Restore statistics from checkpoint
+                    self.inserted_count = data.get('inserted', 0)
+                    self.updated_count = data.get('updated', 0)
+                    self.error_count = data.get('errors', 0)
+                    self.skipped_count = data.get('skipped', 0)
                     return data.get('byte_offset', 0)
             except (json.JSONDecodeError, FileNotFoundError):
                 return 0

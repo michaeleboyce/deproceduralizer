@@ -11,6 +11,7 @@ Features:
 """
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -31,6 +32,38 @@ class PahlkaImplementationLoader(BaseLoader):
         self.implementations_inserted = 0
         self.indicators_inserted = 0
         self.highlights_inserted = 0
+
+    def get_checkpoint(self) -> int:
+        """Override to also restore custom counters."""
+        offset = super().get_checkpoint()
+        # Restore custom counters from state file
+        if self.state_file.exists():
+            try:
+                with open(self.state_file, 'r') as f:
+                    data = json.load(f)
+                    self.implementations_inserted = data.get('implementations_inserted', 0)
+                    self.indicators_inserted = data.get('indicators_inserted', 0)
+                    self.highlights_inserted = data.get('highlights_inserted', 0)
+            except:
+                pass
+        return offset
+
+    def save_checkpoint(self, byte_offset: int):
+        """Override to also save custom counters."""
+        # Save custom stats to state file
+        with open(self.state_file, 'w') as f:
+            json.dump({
+                'byte_offset': byte_offset,
+                'inserted': self.inserted_count,
+                'updated': self.updated_count,
+                'errors': self.error_count,
+                'skipped': self.skipped_count,
+                'jurisdiction': self.jurisdiction,
+                # Custom stats
+                'implementations_inserted': self.implementations_inserted,
+                'indicators_inserted': self.indicators_inserted,
+                'highlights_inserted': self.highlights_inserted,
+            }, f, indent=2)
 
     def validate_record(self, record):
         """Validate a Pahlka implementation record has required fields."""
@@ -105,6 +138,8 @@ class PahlkaImplementationLoader(BaseLoader):
 
         execute_batch(cursor, sql, data)
         self.implementations_inserted += len(batch)
+        # Also update BaseLoader's counter for checkpoint tracking
+        self.inserted_count += len(batch)
 
     def _insert_indicators(self, cursor, batch: List[Dict[str, Any]]) -> Dict[str, List[int]]:
         """
