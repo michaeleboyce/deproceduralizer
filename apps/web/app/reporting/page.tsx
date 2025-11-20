@@ -262,7 +262,7 @@ function ReportingPageContent() {
           {section.tags.map((tag) => (
             <span
               key={tag}
-              className="text-xs bg-purple-50 text-purple-700 px-2 py-1 rounded-full border border-purple-200"
+              className="text-xs bg-violet-50 text-violet-700 px-2 py-1 rounded-full border border-violet-200"
             >
               {tag}
             </span>
@@ -429,7 +429,7 @@ function ReportingPageContent() {
                 <p className="text-sm text-slate-600 mb-2">Active Filters:</p>
                 <div className="flex flex-wrap gap-2">
                   {appliedTag && (
-                    <span className="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-sm">
+                    <span className="bg-violet-100 text-violet-800 px-3 py-1 rounded-full text-sm">
                       Tag: {appliedTag}
                     </span>
                   )}
@@ -439,7 +439,7 @@ function ReportingPageContent() {
                     </span>
                   )}
                   {appliedChapter && (
-                    <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm">
+                    <span className="bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-sm">
                       Chapter: {appliedChapter}
                     </span>
                   )}
@@ -522,7 +522,7 @@ function ReportingPageContent() {
                               toggleTag(tag);
                             }}
                           >
-                            <span className="text-purple-700">{tag}</span>
+                            <span className="text-violet-700">{tag}</span>
                             <span className="ml-2 text-slate-500 font-normal">
                               ({sections.length})
                             </span>

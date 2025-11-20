@@ -343,7 +343,7 @@ function PahlkaImplementationsPageContent() {
             <div className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
               Needs Technical Review
             </div>
-            <div className="text-3xl font-bold text-purple-600 dark:text-purple-400">
+            <div className="text-3xl font-bold text-violet-600 dark:text-violet-400">
               {technicalReviewStats.requires_review.toLocaleString()}
             </div>
             <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">
@@ -562,7 +562,7 @@ function PahlkaImplementationsPageContent() {
                         {section.overall_complexity}
                       </span>
                       {section.requires_technical_review && (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-900/20 text-purple-800 dark:text-purple-200">
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-violet-100 dark:bg-violet-900/20 text-violet-800 dark:text-violet-200">
                           Tech Review
                         </span>
                       )}

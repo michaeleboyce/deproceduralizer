@@ -23,9 +23,16 @@ export default function Navigation({ breadcrumbs }: NavigationProps) {
     if (pathname === "/search") {
       crumbs.push({ label: "Search" });
     } else if (pathname === "/reporting") {
+      crumbs.push({ label: "Analysis", href: "/dashboard/conflicts" });
       crumbs.push({ label: "Reporting Requirements" });
     } else if (pathname === "/anachronisms") {
+      crumbs.push({ label: "Analysis", href: "/dashboard/conflicts" });
       crumbs.push({ label: "Anachronisms" });
+    } else if (pathname === "/pahlka-implementations") {
+      crumbs.push({ label: "Analysis", href: "/dashboard/conflicts" });
+      crumbs.push({ label: "Implementation Analysis" });
+    } else if (pathname === "/dashboard/conflicts") {
+      crumbs.push({ label: "Analysis" });
     } else if (pathname === "/browse") {
       crumbs.push({ label: "Browse" });
     } else if (pathname.startsWith("/section/")) {
@@ -38,9 +45,16 @@ export default function Navigation({ breadcrumbs }: NavigationProps) {
 
   const displayBreadcrumbs = breadcrumbs || defaultBreadcrumbs();
 
+  // Determine if secondary nav should be shown
+  const isAnalysisSection =
+    pathname === "/dashboard/conflicts" ||
+    pathname === "/reporting" ||
+    pathname === "/anachronisms" ||
+    pathname === "/pahlka-implementations";
+
   return (
     <>
-      {/* Main Navigation Header */}
+      {/* Primary Navigation Header */}
       <nav className="bg-white border-b border-slate-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
@@ -52,7 +66,7 @@ export default function Navigation({ breadcrumbs }: NavigationProps) {
               Deproceduralizer
             </Link>
 
-            {/* Nav Links */}
+            {/* Primary Nav Links */}
             <div className="flex gap-6">
               <Link
                 href="/search"
@@ -75,29 +89,9 @@ export default function Navigation({ breadcrumbs }: NavigationProps) {
                 Browse
               </Link>
               <Link
-                href="/reporting"
-                className={`font-medium transition-colors ${
-                  pathname === "/reporting"
-                    ? "text-teal-700"
-                    : "text-slate-700 hover:text-slate-900"
-                }`}
-              >
-                Reporting
-              </Link>
-              <Link
-                href="/anachronisms"
-                className={`font-medium transition-colors ${
-                  pathname === "/anachronisms"
-                    ? "text-teal-700"
-                    : "text-slate-700 hover:text-slate-900"
-                }`}
-              >
-                Anachronisms
-              </Link>
-              <Link
                 href="/dashboard/conflicts"
                 className={`font-medium transition-colors ${
-                  pathname === "/dashboard/conflicts"
+                  isAnalysisSection
                     ? "text-teal-700"
                     : "text-slate-700 hover:text-slate-900"
                 }`}
@@ -109,8 +103,58 @@ export default function Navigation({ breadcrumbs }: NavigationProps) {
         </div>
       </nav>
 
-      {/* Breadcrumbs */}
-      {displayBreadcrumbs.length > 0 && (
+      {/* Secondary Navigation - Analysis Section */}
+      {isAnalysisSection && (
+        <div className="bg-slate-50 border-b border-slate-200">
+          <div className="max-w-7xl mx-auto px-4 py-3">
+            <div className="flex items-center gap-6 text-sm">
+              <Link
+                href="/dashboard/conflicts"
+                className={`font-medium transition-colors ${
+                  pathname === "/dashboard/conflicts"
+                    ? "text-teal-700 border-b-2 border-teal-700 pb-1"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Conflicts
+              </Link>
+              <Link
+                href="/reporting"
+                className={`font-medium transition-colors ${
+                  pathname === "/reporting"
+                    ? "text-teal-700 border-b-2 border-teal-700 pb-1"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Reporting
+              </Link>
+              <Link
+                href="/anachronisms"
+                className={`font-medium transition-colors ${
+                  pathname === "/anachronisms"
+                    ? "text-teal-700 border-b-2 border-teal-700 pb-1"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Anachronisms
+              </Link>
+              <Link
+                href="/pahlka-implementations"
+                className={`font-medium transition-colors ${
+                  pathname === "/pahlka-implementations"
+                    ? "text-teal-700 border-b-2 border-teal-700 pb-1"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Implementation
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Breadcrumbs - Only show when not in analysis section (secondary nav replaces it) */}
+      {!isAnalysisSection && displayBreadcrumbs.length > 0 && (
         <div className="bg-slate-50 border-b border-slate-200">
           <div className="max-w-7xl mx-auto px-4 py-3">
             <div className="flex items-center gap-2 text-sm">

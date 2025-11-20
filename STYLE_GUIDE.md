@@ -399,28 +399,63 @@ max-w-2xl    /* 672px - Forms, narrow content */
 
 ### Navigation
 
-#### Page Header with Breadcrumbs
+#### Two-Tier Navigation System
+
+Our navigation uses a two-tier architecture: primary navigation for main sections, and contextual secondary navigation for related pages within a section.
+
+**Primary Navigation** (always visible):
 ```tsx
-<nav className="bg-white border-b border-slate-200">
+<nav className="bg-white border-b border-slate-200 shadow-sm">
   <div className="max-w-7xl mx-auto px-4 py-4">
     <div className="flex items-center justify-between">
-      {/* Logo/Brand */}
-      <Link href="/" className="text-xl font-bold text-slate-900">
+      <Link href="/" className="text-xl font-bold text-slate-900 hover:text-teal-700">
         Deproceduralizer
       </Link>
-
-      {/* Nav Links */}
       <div className="flex gap-6">
-        <Link href="/search" className="text-slate-700 hover:text-slate-900
-                                       font-medium">
+        <Link href="/search" className="font-medium text-slate-700 hover:text-slate-900">
           Search
+        </Link>
+        <Link href="/browse" className="font-medium text-slate-700 hover:text-slate-900">
+          Browse
+        </Link>
+        <Link href="/dashboard/conflicts" className="font-medium text-slate-700 hover:text-slate-900">
+          Analysis
         </Link>
       </div>
     </div>
   </div>
 </nav>
+```
 
-{/* Breadcrumbs */}
+**Secondary Navigation** (contextual, shown for Analysis section):
+```tsx
+{/* Only shown on /dashboard/conflicts, /reporting, /anachronisms, /pahlka-implementations */}
+<div className="bg-slate-50 border-b border-slate-200">
+  <div className="max-w-7xl mx-auto px-4 py-3">
+    <div className="flex items-center gap-6 text-sm">
+      <Link href="/dashboard/conflicts"
+            className="font-medium text-teal-700 border-b-2 border-teal-700 pb-1">
+        Conflicts
+      </Link>
+      <Link href="/reporting"
+            className="font-medium text-slate-600 hover:text-slate-900">
+        Reporting
+      </Link>
+      <Link href="/anachronisms"
+            className="font-medium text-slate-600 hover:text-slate-900">
+        Anachronisms
+      </Link>
+      <Link href="/pahlka-implementations"
+            className="font-medium text-slate-600 hover:text-slate-900">
+        Implementation
+      </Link>
+    </div>
+  </div>
+</div>
+```
+
+**Breadcrumbs** (shown when not in Analysis section):
+```tsx
 <div className="bg-slate-50 border-b border-slate-200">
   <div className="max-w-7xl mx-auto px-4 py-3">
     <div className="flex items-center gap-2 text-sm text-slate-600">
@@ -439,15 +474,60 @@ max-w-2xl    /* 672px - Forms, narrow content */
 ## Page Layouts
 
 ### Hero Section (Home Page)
+
+Modern, spacious hero with enhanced gradients and prominent search:
+
 ```tsx
-<div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-  <div className="max-w-5xl mx-auto px-4 py-20">
-    <h1 className="text-5xl font-bold text-slate-900 text-center mb-4">
-      Deproceduralizer
-    </h1>
-    <p className="text-xl text-slate-600 text-center mb-2">
-      Search and analyze Washington, D.C. legal code
-    </p>
+<div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-teal-50/30">
+  {/* Sticky Header */}
+  <header className="border-b border-slate-200/50 bg-white/80 backdrop-blur-sm sticky top-0 z-10">
+    <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+      <Link href="/" className="text-lg font-bold text-slate-900 hover:text-teal-700">
+        Deproceduralizer
+      </Link>
+      <div className="flex gap-6">
+        <Link href="/search" className="text-sm font-medium text-slate-600 hover:text-slate-900">
+          Search
+        </Link>
+        <Link href="/browse" className="text-sm font-medium text-slate-600 hover:text-slate-900">
+          Browse
+        </Link>
+        <Link href="/dashboard/conflicts" className="text-sm font-medium text-slate-600 hover:text-slate-900">
+          Analysis
+        </Link>
+      </div>
+    </div>
+  </header>
+
+  {/* Hero */}
+  <div className="max-w-6xl mx-auto px-4 py-20 md:py-32">
+    <div className="text-center mb-12">
+      <h1 className="text-6xl md:text-7xl lg:text-8xl font-bold text-slate-900 mb-6 tracking-tight leading-none">
+        Deproceduralizer
+      </h1>
+      <p className="text-2xl md:text-3xl text-slate-600 mb-4 font-light">
+        Search and analyze Washington, D.C. legal code
+      </p>
+      <p className="text-base text-slate-500">
+        Full-text search • Cross-references • Obligations tracking
+      </p>
+    </div>
+
+    {/* Enhanced Search Bar */}
+    <div className="max-w-4xl mx-auto mb-24">
+      <form className="relative">
+        <div className="flex gap-3 shadow-xl rounded-xl overflow-hidden border border-slate-200 bg-white">
+          <input
+            type="text"
+            placeholder="Search DC Code..."
+            className="flex-1 px-6 py-6 text-lg focus:outline-none text-slate-900 placeholder:text-slate-400 bg-white"
+          />
+          <button className="px-12 py-6 bg-teal-700 text-white hover:bg-teal-800 font-semibold text-lg">
+            Search
+          </button>
+        </div>
+      </form>
+    </div>
   </div>
 </div>
 ```
@@ -599,4 +679,70 @@ When updating existing components:
 
 ---
 
-*Last updated: 2025-11-18*
+## Footer Component
+
+Comprehensive footer with 4-column grid layout:
+
+```tsx
+<footer className="bg-slate-900 text-slate-300 mt-20">
+  <div className="max-w-7xl mx-auto px-4 py-12">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-8">
+      {/* About Column */}
+      <div>
+        <h3 className="text-white font-semibold text-lg mb-4">
+          Deproceduralizer
+        </h3>
+        <p className="text-sm text-slate-400 mb-4">
+          A modern tool for searching and analyzing Washington, D.C. legal code
+        </p>
+        <p className="text-xs text-slate-500">Version 0.1.0</p>
+      </div>
+
+      {/* Navigation Column */}
+      <div>
+        <h4 className="text-white font-semibold mb-4">Navigate</h4>
+        <ul className="space-y-2 text-sm">
+          <li><Link href="/search" className="hover:text-teal-400">Search</Link></li>
+          <li><Link href="/browse" className="hover:text-teal-400">Browse Code</Link></li>
+          <li><Link href="/reporting" className="hover:text-teal-400">Reporting Requirements</Link></li>
+        </ul>
+      </div>
+
+      {/* Resources Column */}
+      <div>
+        <h4 className="text-white font-semibold mb-4">Resources</h4>
+        <ul className="space-y-2 text-sm">
+          <li><a href="https://github.com/DCCouncil/law-xml" className="hover:text-teal-400">DC Law XML</a></li>
+          <li><Link href="/pahlka-implementations" className="hover:text-teal-400">Implementation Analysis</Link></li>
+        </ul>
+      </div>
+
+      {/* Information Column */}
+      <div>
+        <h4 className="text-white font-semibold mb-4">Information</h4>
+        <p className="text-sm text-slate-400">Data sourced from the official DC Code XML repository</p>
+      </div>
+    </div>
+
+    {/* Bottom Bar */}
+    <div className="border-t border-slate-800 pt-8 flex justify-between items-center">
+      <div className="text-sm text-slate-500">
+        © {currentYear} Deproceduralizer. All rights reserved.
+      </div>
+      <div className="text-sm text-slate-500">
+        Powered by <a href="https://nextjs.org" className="hover:text-teal-400">Next.js</a>
+        {" + "}
+        <a href="https://www.postgresql.org" className="hover:text-teal-400">PostgreSQL</a>
+      </div>
+    </div>
+  </div>
+</footer>
+```
+
+**Usage:**
+- Add Footer component to layout.tsx wrapped in flex-col min-h-screen
+- Main content should use flex-grow class to push footer to bottom
+
+---
+
+*Last updated: 2025-11-20*

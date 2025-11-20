@@ -16,92 +16,84 @@ export default function HomePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-teal-50/30">
       {/* Minimal Header - Only on Homepage */}
-      <header className="border-b border-slate-200/50 bg-white/80 backdrop-blur-sm">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-end gap-6">
+      <header className="border-b border-slate-200/50 bg-white/80 backdrop-blur-sm sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <Link
-            href="/browse"
-            className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
+            href="/"
+            className="text-lg font-bold text-slate-900 hover:text-teal-700 transition-colors"
           >
-            Browse →
+            Deproceduralizer
           </Link>
-          <Link
-            href="/reporting"
-            className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
-          >
-            Reports →
-          </Link>
-          <Link
-            href="/anachronisms"
-            className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
-          >
-            Anachronisms →
-          </Link>
-          <Link
-            href="/pahlka-implementations"
-            className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
-          >
-            Implementation →
-          </Link>
-          <Link
-            href="/dashboard/conflicts"
-            className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
-          >
-            Analysis →
-          </Link>
-          <Link
-            href="/search"
-            className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
-          >
-            Advanced Search →
-          </Link>
+          <div className="flex gap-6">
+            <Link
+              href="/search"
+              className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
+            >
+              Search
+            </Link>
+            <Link
+              href="/browse"
+              className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
+            >
+              Browse
+            </Link>
+            <Link
+              href="/dashboard/conflicts"
+              className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
+            >
+              Analysis
+            </Link>
+          </div>
         </div>
       </header>
 
       {/* Hero Section */}
-      <div className="max-w-5xl mx-auto px-4 py-24">
-        <div className="text-center mb-16">
-          <h1 className="text-6xl font-bold text-slate-900 mb-6 tracking-tight">
+      <div className="max-w-6xl mx-auto px-4 py-20 md:py-32">
+        <div className="text-center mb-12">
+          <h1 className="text-6xl md:text-7xl lg:text-8xl font-bold text-slate-900 mb-6 tracking-tight leading-none">
             Deproceduralizer
           </h1>
-          <p className="text-2xl text-slate-600 mb-3 font-light">
+          <p className="text-2xl md:text-3xl text-slate-600 mb-4 font-light">
             Search and analyze Washington, D.C. legal code
           </p>
-          <p className="text-sm text-slate-500">
+          <p className="text-base text-slate-500">
             Full-text search • Cross-references • Obligations tracking
           </p>
         </div>
 
-        {/* Quick Search */}
-        <div className="max-w-3xl mx-auto mb-20">
-          <form onSubmit={handleSearch} className="flex gap-3">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search DC Code (e.g., 'notice', 'board', 'election')..."
-              className="flex-1 px-6 py-5 border border-slate-300 rounded-lg text-lg
-                         focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent
-                         shadow-sm text-slate-900 placeholder:text-slate-400 bg-white
-                         transition-all"
-            />
-            <button
-              type="submit"
-              disabled={!query.trim()}
-              className="px-10 py-5 bg-teal-700 text-white rounded-lg hover:bg-teal-800
-                         disabled:bg-slate-400 disabled:cursor-not-allowed
-                         font-semibold text-lg shadow-sm transition-all"
-            >
-              Search
-            </button>
+        {/* Enhanced Search Bar */}
+        <div className="max-w-4xl mx-auto mb-24">
+          <form onSubmit={handleSearch} className="relative">
+            <div className="flex gap-3 shadow-xl rounded-xl overflow-hidden border border-slate-200 bg-white">
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search DC Code (e.g., 'notice', 'board', 'election')..."
+                className="flex-1 px-6 py-6 text-lg
+                           focus:outline-none
+                           text-slate-900 placeholder:text-slate-400 bg-white"
+              />
+              <button
+                type="submit"
+                disabled={!query.trim()}
+                className="px-12 py-6 bg-teal-700 text-white hover:bg-teal-800
+                           disabled:bg-slate-400 disabled:cursor-not-allowed
+                           font-semibold text-lg transition-colors"
+              >
+                Search
+              </button>
+            </div>
           </form>
-          <div className="mt-4 text-center">
+          <div className="mt-5 text-center">
             <Link
               href="/search"
-              className="text-teal-700 hover:text-teal-800 text-sm font-medium transition-colors"
+              className="text-teal-700 hover:text-teal-800 text-sm font-medium transition-colors inline-flex items-center gap-1"
             >
-              Or go to advanced search →
+              Advanced search options
+              <span className="text-lg">→</span>
             </Link>
           </div>
         </div>
@@ -146,11 +138,11 @@ export default function HomePage() {
           </h3>
           <div className="grid grid-cols-3 gap-8 text-center">
             <div>
-              <div className="text-5xl font-bold text-teal-700 mb-2">100</div>
+              <div className="text-5xl font-bold text-teal-700 mb-2">12,954</div>
               <div className="text-sm text-slate-600 font-medium">Sections</div>
             </div>
             <div>
-              <div className="text-5xl font-bold text-teal-700 mb-2">2</div>
+              <div className="text-5xl font-bold text-teal-700 mb-2">10</div>
               <div className="text-sm text-slate-600 font-medium">Titles</div>
             </div>
             <div>
@@ -159,7 +151,7 @@ export default function HomePage() {
             </div>
           </div>
           <p className="text-xs text-slate-500 text-center mt-8 px-4">
-            Currently loaded: DC Code Titles 1-2 (subset for development)
+            Currently loaded: DC Code Titles 1-10 (medium dataset for development)
           </p>
         </div>
 
