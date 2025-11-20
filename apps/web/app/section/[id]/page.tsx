@@ -425,14 +425,14 @@ export default async function SectionPage({
             {/* Desktop Sidebar - Table of Contents */}
             <aside className="hidden lg:block lg:w-64 flex-shrink-0">
               <div className="sticky top-8">
-                <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
-                  <h3 className="text-sm font-semibold text-slate-900 mb-3">On This Page</h3>
-                  <nav className="space-y-1">
+                <div className="bg-white rounded-lg border border-slate-200 shadow-md p-6 hover:shadow-lg transition-shadow">
+                  <h3 className="text-base font-bold text-slate-900 mb-4">On This Page</h3>
+                  <nav className="space-y-1.5">
                     {tocItems.map((item) => (
                       <a
                         key={item.id}
                         href={`#${item.id}`}
-                        className="block px-3 py-2 text-sm text-slate-600 hover:text-teal-700 hover:bg-teal-50 rounded-md transition-colors"
+                        className="block px-3 py-2.5 text-sm text-slate-600 hover:text-teal-700 hover:bg-teal-50 rounded-md transition-colors border-l-2 border-transparent hover:border-teal-700"
                       >
                         {item.label}
                       </a>
@@ -441,69 +441,69 @@ export default async function SectionPage({
                 </div>
 
                 {/* Quick Stats */}
-                <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4 mt-4">
-                  <h3 className="text-sm font-semibold text-slate-900 mb-3">Quick Stats</h3>
-                  <div className="space-y-2 text-sm">
+                <div className="bg-white rounded-lg border border-slate-200 shadow-md p-6 hover:shadow-lg transition-shadow mt-4">
+                  <h3 className="text-base font-bold text-slate-900 mb-4">Quick Stats</h3>
+                  <div className="space-y-3 text-sm divide-y divide-slate-100">
                     {anachronismAnalysis?.hasAnachronism && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-600">Anachronisms:</span>
-                        <span className={`font-medium ${
-                          anachronismAnalysis.overallSeverity === 'CRITICAL' ? 'text-red-600' :
-                          anachronismAnalysis.overallSeverity === 'HIGH' ? 'text-orange-600' :
-                          anachronismAnalysis.overallSeverity === 'MEDIUM' ? 'text-yellow-600' :
-                          'text-slate-900'
+                      <div className="flex justify-between items-center pt-2 first:pt-0">
+                        <span className="text-slate-700 font-medium">Anachronisms:</span>
+                        <span className={`px-2.5 py-1 rounded-full font-semibold text-xs ${
+                          anachronismAnalysis.overallSeverity === 'CRITICAL' ? 'bg-red-50 text-red-700' :
+                          anachronismAnalysis.overallSeverity === 'HIGH' ? 'bg-orange-50 text-orange-700' :
+                          anachronismAnalysis.overallSeverity === 'MEDIUM' ? 'bg-yellow-50 text-yellow-700' :
+                          'bg-slate-100 text-slate-700'
                         }`}>
                           {anachronismIndicatorsData.length} ({anachronismAnalysis.overallSeverity})
                         </span>
                       </div>
                     )}
                     {pahlkaImplementation?.hasImplementationIssues && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-600">Implementation:</span>
-                        <span className={`font-medium ${
-                          pahlkaImplementation.overallComplexity === 'HIGH' ? 'text-purple-600' :
-                          pahlkaImplementation.overallComplexity === 'MEDIUM' ? 'text-blue-600' :
-                          pahlkaImplementation.overallComplexity === 'LOW' ? 'text-indigo-600' :
-                          'text-slate-900'
+                      <div className="flex justify-between items-center pt-2 first:pt-0">
+                        <span className="text-slate-700 font-medium">Implementation:</span>
+                        <span className={`px-2.5 py-1 rounded-full font-semibold text-xs ${
+                          pahlkaImplementation.overallComplexity === 'HIGH' ? 'bg-purple-50 text-purple-700' :
+                          pahlkaImplementation.overallComplexity === 'MEDIUM' ? 'bg-blue-50 text-blue-700' :
+                          pahlkaImplementation.overallComplexity === 'LOW' ? 'bg-indigo-50 text-indigo-700' :
+                          'bg-slate-100 text-slate-700'
                         }`}>
                           {pahlkaIndicatorsData.length} ({pahlkaImplementation.overallComplexity})
                         </span>
                       </div>
                     )}
                     {enhancedObligations.length > 0 && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-600">Obligations:</span>
-                        <span className="font-medium text-slate-900">{enhancedObligations.length}</span>
+                      <div className="flex justify-between items-center pt-2 first:pt-0">
+                        <span className="text-slate-700 font-medium">Obligations:</span>
+                        <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 font-semibold text-xs">{enhancedObligations.length}</span>
                       </div>
                     )}
                     {deadlines.length > 0 && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-600">Deadlines:</span>
-                        <span className="font-medium text-slate-900">{deadlines.length}</span>
+                      <div className="flex justify-between items-center pt-2 first:pt-0">
+                        <span className="text-slate-700 font-medium">Deadlines:</span>
+                        <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-semibold text-xs">{deadlines.length}</span>
                       </div>
                     )}
                     {amounts.length > 0 && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-600">Amounts:</span>
-                        <span className="font-medium text-slate-900">{amounts.length}</span>
+                      <div className="flex justify-between items-center pt-2 first:pt-0">
+                        <span className="text-slate-700 font-medium">Amounts:</span>
+                        <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-semibold text-xs">{amounts.length}</span>
                       </div>
                     )}
                     {referencesFrom.length > 0 && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-600">Refs From:</span>
-                        <span className="font-medium text-slate-900">{referencesFrom.length}</span>
+                      <div className="flex justify-between items-center pt-2 first:pt-0">
+                        <span className="text-slate-700 font-medium">Refs From:</span>
+                        <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 font-semibold text-xs">{referencesFrom.length}</span>
                       </div>
                     )}
                     {referencesTo.length > 0 && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-600">Refs To:</span>
-                        <span className="font-medium text-slate-900">{referencesTo.length}</span>
+                      <div className="flex justify-between items-center pt-2 first:pt-0">
+                        <span className="text-slate-700 font-medium">Refs To:</span>
+                        <span className="px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 font-semibold text-xs">{referencesTo.length}</span>
                       </div>
                     )}
                     {similarSections.length > 0 && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-600">Similar:</span>
-                        <span className="font-medium text-slate-900">{similarSections.length}</span>
+                      <div className="flex justify-between items-center pt-2 first:pt-0">
+                        <span className="text-slate-700 font-medium">Similar:</span>
+                        <span className="px-2.5 py-1 rounded-full bg-sky-50 text-sky-700 font-semibold text-xs">{similarSections.length}</span>
                       </div>
                     )}
                   </div>
