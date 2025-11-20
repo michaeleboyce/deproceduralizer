@@ -250,6 +250,57 @@ export const structure = pgTable("structure", {
   ordinalIdx: index("idx_structure_ordinal").on(table.jurisdiction, table.ordinal),
 }));
 
+/**
+ * Pahlka implementation analysis results for sections
+ */
+export const sectionPahlkaImplementations = pgTable("section_pahlka_implementations", {
+  jurisdiction: varchar("jurisdiction", { length: 10 }).notNull(),
+  sectionId: text("section_id").notNull(),
+  hasImplementationIssues: boolean("has_implementation_issues").notNull().default(false),
+  overallComplexity: text("overall_complexity"), // 'HIGH', 'MEDIUM', 'LOW'
+  summary: text("summary"),
+  requiresTechnicalReview: boolean("requires_technical_review").notNull().default(false),
+  modelUsed: text("model_used"),
+  analyzedAt: timestamp("analyzed_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.jurisdiction, table.sectionId] }),
+  complexityIdx: index("idx_pahlka_implementations_complexity").on(table.jurisdiction, table.overallComplexity),
+  technicalReviewIdx: index("idx_pahlka_implementations_technical_review").on(table.jurisdiction, table.requiresTechnicalReview),
+}));
+
+/**
+ * Individual Pahlka implementation indicators found in sections
+ */
+export const pahlkaImplementationIndicators = pgTable("pahlka_implementation_indicators", {
+  id: bigserial("id", { mode: "number" }),
+  jurisdiction: varchar("jurisdiction", { length: 10 }).notNull(),
+  sectionId: text("section_id").notNull(),
+  category: text("category").notNull(), // complexity_policy_debt, options_become_requirements, etc.
+  complexity: text("complexity").notNull(), // HIGH, MEDIUM, LOW
+  implementationApproach: text("implementation_approach").notNull(),
+  effortEstimate: text("effort_estimate"),
+  explanation: text("explanation").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.jurisdiction, table.id] }),
+  sectionIdx: index("idx_pahlka_indicators_section").on(table.jurisdiction, table.sectionId),
+  categoryIdx: index("idx_pahlka_indicators_category").on(table.category),
+  complexityIdx: index("idx_pahlka_indicators_complexity").on(table.complexity),
+}));
+
+/**
+ * Matched phrases/highlights for Pahlka implementation indicators
+ */
+export const sectionPahlkaHighlights = pgTable("section_pahlka_highlights", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  indicatorId: bigint("indicator_id", { mode: "number" }).notNull(),
+  phrase: text("phrase").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (table) => ({
+  indicatorIdx: index("idx_pahlka_highlights_indicator").on(table.indicatorId),
+}));
+
 // Type exports for use in application code
 export type Jurisdiction = typeof jurisdictions.$inferSelect;
 export type NewJurisdiction = typeof jurisdictions.$inferInsert;
@@ -269,3 +320,6 @@ export type Structure = typeof structure.$inferSelect;
 export type SectionAnachronism = typeof sectionAnachronisms.$inferSelect;
 export type AnachronismIndicator = typeof anachronismIndicators.$inferSelect;
 export type SectionAnachronismHighlight = typeof sectionAnachronismHighlights.$inferSelect;
+export type SectionPahlkaImplementation = typeof sectionPahlkaImplementations.$inferSelect;
+export type PahlkaImplementationIndicator = typeof pahlkaImplementationIndicators.$inferSelect;
+export type SectionPahlkaHighlight = typeof sectionPahlkaHighlights.$inferSelect;

@@ -15,12 +15,16 @@ import {
   sectionAnachronisms,
   anachronismIndicators,
   sectionAnachronismHighlights,
+  sectionPahlkaImplementations,
+  pahlkaImplementationIndicators,
+  sectionPahlkaHighlights,
 } from "@/db/schema";
 import { eq, or, and, sql } from "drizzle-orm";
 import SimilarSectionsList from "@/components/SimilarSectionsList";
 import { highlightPhrases } from "@/lib/highlight";
 import Navigation from "@/components/Navigation";
 import MobileTableOfContents from "@/components/MobileTableOfContents";
+import PahlkaImplementationDisplay from "@/components/PahlkaImplementationDisplay";
 import parse, { DOMNode, Element } from 'html-react-parser';
 import { parseCitations } from "@/lib/citation";
 import { CitationLink } from "@/components/CitationLink";
@@ -311,6 +315,64 @@ export default async function SectionPage({
     }
   }
 
+  // Fetch Pahlka implementation analysis
+  const [pahlkaImplementation] = await db
+    .select()
+    .from(sectionPahlkaImplementations)
+    .where(and(
+      eq(sectionPahlkaImplementations.jurisdiction, jurisdiction),
+      eq(sectionPahlkaImplementations.sectionId, id)
+    ))
+    .limit(1);
+
+  // Fetch Pahlka implementation indicators with their highlights if analysis exists
+  let pahlkaIndicatorsData: Array<{
+    id: number;
+    category: string;
+    complexity: string;
+    implementationApproach: string;
+    effortEstimate: string | null;
+    explanation: string;
+    matchedPhrases: string[];
+  }> = [];
+
+  if (pahlkaImplementation?.hasImplementationIssues) {
+    const indicatorsResult = await db
+      .select({
+        id: pahlkaImplementationIndicators.id,
+        category: pahlkaImplementationIndicators.category,
+        complexity: pahlkaImplementationIndicators.complexity,
+        implementationApproach: pahlkaImplementationIndicators.implementationApproach,
+        effortEstimate: pahlkaImplementationIndicators.effortEstimate,
+        explanation: pahlkaImplementationIndicators.explanation,
+      })
+      .from(pahlkaImplementationIndicators)
+      .where(and(
+        eq(pahlkaImplementationIndicators.jurisdiction, jurisdiction),
+        eq(pahlkaImplementationIndicators.sectionId, id)
+      ))
+      .orderBy(
+        sql`CASE ${pahlkaImplementationIndicators.complexity}
+          WHEN 'HIGH' THEN 1
+          WHEN 'MEDIUM' THEN 2
+          WHEN 'LOW' THEN 3
+        END`
+      );
+
+    // Fetch all highlights for these indicators
+    for (const indicator of indicatorsResult) {
+      const highlights = await db
+        .select({ phrase: sectionPahlkaHighlights.phrase })
+        .from(sectionPahlkaHighlights)
+        .where(eq(sectionPahlkaHighlights.indicatorId, indicator.id));
+
+      pahlkaIndicatorsData.push({
+        ...indicator,
+        matchedPhrases: highlights.map(h => h.phrase),
+      });
+    }
+  }
+
   // Apply highlighting to section HTML if there are phrases
   const highlightedHtml = section.hasReporting && phrasesToHighlight.length > 0
     ? highlightPhrases(section.textHtml, phrasesToHighlight.map(h => h.phrase))
@@ -332,6 +394,7 @@ export default async function SectionPage({
   const tocItems = [
     { id: "section-text", label: "Section Text" },
     anachronismAnalysis?.hasAnachronism && { id: "anachronisms", label: "Anachronisms" },
+    pahlkaImplementation?.hasImplementationIssues && { id: "pahlka-implementation", label: "Implementation Analysis" },
     similarSections.length > 0 && { id: "similar-sections", label: "Similar Sections" },
     enhancedObligations.length > 0 && { id: "extracted-obligations", label: "Extracted Obligations" },
     hasObligations && { id: "obligations-references", label: "Obligations & References" },
@@ -390,6 +453,19 @@ export default async function SectionPage({
                           'text-slate-900'
                         }`}>
                           {anachronismIndicatorsData.length} ({anachronismAnalysis.overallSeverity})
+                        </span>
+                      </div>
+                    )}
+                    {pahlkaImplementation?.hasImplementationIssues && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-600">Implementation:</span>
+                        <span className={`font-medium ${
+                          pahlkaImplementation.overallComplexity === 'HIGH' ? 'text-purple-600' :
+                          pahlkaImplementation.overallComplexity === 'MEDIUM' ? 'text-blue-600' :
+                          pahlkaImplementation.overallComplexity === 'LOW' ? 'text-indigo-600' :
+                          'text-slate-900'
+                        }`}>
+                          {pahlkaIndicatorsData.length} ({pahlkaImplementation.overallComplexity})
                         </span>
                       </div>
                     )}
@@ -609,6 +685,17 @@ export default async function SectionPage({
                 </div>
               )}
             </div>
+          )}
+
+          {/* Pahlka Implementation Analysis */}
+          {pahlkaImplementation?.hasImplementationIssues && (
+            <PahlkaImplementationDisplay
+              summary={pahlkaImplementation.summary}
+              overallComplexity={pahlkaImplementation.overallComplexity}
+              requiresTechnicalReview={pahlkaImplementation.requiresTechnicalReview}
+              modelUsed={pahlkaImplementation.modelUsed}
+              indicators={pahlkaIndicatorsData}
+            />
           )}
 
           {/* Main Content */}
