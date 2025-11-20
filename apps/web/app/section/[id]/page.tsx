@@ -24,8 +24,6 @@ import MobileTableOfContents from "@/components/MobileTableOfContents";
 import parse, { DOMNode, Element } from 'html-react-parser';
 import { parseCitations } from "@/lib/citation";
 import { CitationLink } from "@/components/CitationLink";
-import CitationGraph from "@/components/CitationGraph";
-import CollapsibleSection from "@/components/CollapsibleSection";
 import SubsectionParser from "@/components/SubsectionParser";
 
 interface Deadline {
@@ -335,7 +333,6 @@ export default async function SectionPage({
     { id: "section-text", label: "Section Text" },
     anachronismAnalysis?.hasAnachronism && { id: "anachronisms", label: "Anachronisms" },
     similarSections.length > 0 && { id: "similar-sections", label: "Similar Sections" },
-    { id: "citation-graph", label: "Citation Network" },
     enhancedObligations.length > 0 && { id: "extracted-obligations", label: "Extracted Obligations" },
     hasObligations && { id: "obligations-references", label: "Obligations & References" },
   ].filter(Boolean) as { id: string; label: string }[];
@@ -632,18 +629,6 @@ export default async function SectionPage({
               />
             </div>
           )}
-
-          {/* Citation Graph */}
-          {/* Citation Graph */}
-          <div id="citation-graph" className="scroll-mt-20 mb-6">
-            <CollapsibleSection 
-              title="Citation Network" 
-              description="Visualizing references to and from this section."
-              defaultOpen={false}
-            >
-              <CitationGraph sectionId={id} />
-            </CollapsibleSection>
-          </div>
 
           {/* Enhanced Obligations */}
           {enhancedObligations.length > 0 && (
