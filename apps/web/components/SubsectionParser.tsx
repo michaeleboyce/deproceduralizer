@@ -24,7 +24,9 @@ function getSubsectionLevel(marker: string): number | null {
 }
 
 /**
- * Splits text by subsection markers, keeping the markers
+ * Splits text by subsection markers, keeping the markers.
+ * Distinguishes between actual subsection markers (e.g., "(1) A person shall...")
+ * and inline cross-references (e.g., "paragraph (1) of this subsection").
  */
 function splitBySubsections(text: string): Array<{ marker: string | null; text: string }> {
   // Pattern matches subsection markers - simplified to just find the markers
@@ -34,18 +36,52 @@ function splitBySubsections(text: string): Array<{ marker: string | null; text: 
   let lastIndex = 0;
   let match;
 
+  // Words that commonly precede cross-references (not subsection markers)
+  const crossRefWords = /\b(paragraph|subsection|section|subdivision|subparagraph|subpart|clause|item|part|chapter|title|under|in|to|of|per|see|from|as)\s+$/i;
+
   // Find all subsection markers
   while ((match = pattern.exec(text)) !== null) {
     const marker = match[1];
     const markerStart = match.index;
     const markerEnd = match.index + match[0].length;
 
-    // Only treat as a subsection marker if it's at the start or preceded by whitespace/punctuation
+    // Get context before the marker
     const charBefore = markerStart > 0 ? text[markerStart - 1] : '';
-    const isValidMarker = markerStart === 0 || /[\s:;,.]/.test(charBefore);
+    const textBefore = text.slice(Math.max(0, markerStart - 30), markerStart);
 
-    if (!isValidMarker) {
-      continue; // Skip markers that appear mid-word
+    // Get text after the marker
+    const textAfter = text.slice(markerEnd, Math.min(text.length, markerEnd + 30));
+
+    // Skip if marker appears mid-word
+    if (markerStart > 0 && !/[\s:;,.]/.test(charBefore)) {
+      continue;
+    }
+
+    // Check if this looks like a cross-reference rather than a subsection marker
+    const isCrossReference =
+      // Preceded by common reference words like "paragraph (1)" or "section (2)"
+      crossRefWords.test(textBefore) ||
+      // Followed by "of", "under", "in", "to" - typically cross-references
+      /^(of|under|in|to|herein|thereof|or|and)\b/i.test(textAfter) ||
+      // Appears mid-sentence (lowercase letter before the reference word)
+      /[a-z]\s+\w+\s+$/i.test(textBefore);
+
+    if (isCrossReference) {
+      continue; // Skip cross-references, treat them as regular text
+    }
+
+    // Additional validation: true subsection markers typically appear:
+    // - At the very start of text
+    // - After a period/colon/semicolon (new sentence)
+    // - Followed by a capital letter or determiners (The, A, An, Any, Each, No, etc.)
+    const isLikelySubsectionMarker =
+      markerStart === 0 || // Start of text
+      /[.:;]\s*$/.test(textBefore) || // After sentence-ending punctuation
+      /^[A-Z]/.test(textAfter) || // Followed by capital letter
+      /^(The|A|An|Any|Each|No|Every|All|Some)\b/.test(textAfter); // Followed by determiner
+
+    if (!isLikelySubsectionMarker) {
+      continue; // Skip if it doesn't look like a subsection marker
     }
 
     // If there's text before this marker, add it as content for the previous section
