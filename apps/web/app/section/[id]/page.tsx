@@ -26,6 +26,7 @@ import Navigation from "@/components/Navigation";
 import MobileTableOfContents from "@/components/MobileTableOfContents";
 import PahlkaImplementationDisplay from "@/components/PahlkaImplementationDisplay";
 import MatchedPhraseChips from "@/components/MatchedPhraseChips";
+import BookmarkButton from "@/components/BookmarkButton";
 import parse, { DOMNode, Element } from 'html-react-parser';
 import { parseCitations } from "@/lib/citation";
 import { CitationLink } from "@/components/CitationLink";
@@ -530,10 +531,13 @@ export default async function SectionPage({
             </h1>
 
             {/* Citation */}
-            <div className="text-slate-600">
+            <div className="text-slate-600 mb-4">
               <span className="font-semibold">Citation:</span>{" "}
               <span className="font-mono">{section.citation}</span>
             </div>
+
+            {/* Bookmark Button */}
+            <BookmarkButton itemType="section" itemId={section.id} />
           </div>
 
           {/* Reporting Requirements */}
@@ -582,20 +586,23 @@ export default async function SectionPage({
               anachronismAnalysis.overallSeverity === 'MEDIUM' ? 'bg-yellow-50 border-yellow-300' :
               'bg-slate-50 border-slate-300'
             }`}>
-              <div className="flex items-center gap-2 mb-3 flex-wrap">
-                <span className={`inline-block px-3 py-1 text-white text-sm font-semibold rounded-full ${
-                  anachronismAnalysis.overallSeverity === 'CRITICAL' ? 'bg-red-600' :
-                  anachronismAnalysis.overallSeverity === 'HIGH' ? 'bg-orange-600' :
-                  anachronismAnalysis.overallSeverity === 'MEDIUM' ? 'bg-yellow-600' :
-                  'bg-slate-600'
-                }`}>
-                  ⚠️ Anachronistic Language Detected ({anachronismAnalysis.overallSeverity})
-                </span>
-                {anachronismAnalysis.requiresImmediateReview && (
-                  <span className="inline-block px-2 py-0.5 bg-red-600 text-white text-xs font-medium rounded">
-                    IMMEDIATE REVIEW REQUIRED
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`inline-block px-3 py-1 text-white text-sm font-semibold rounded-full ${
+                    anachronismAnalysis.overallSeverity === 'CRITICAL' ? 'bg-red-600' :
+                    anachronismAnalysis.overallSeverity === 'HIGH' ? 'bg-orange-600' :
+                    anachronismAnalysis.overallSeverity === 'MEDIUM' ? 'bg-yellow-600' :
+                    'bg-slate-600'
+                  }`}>
+                    ⚠️ Anachronistic Language Detected ({anachronismAnalysis.overallSeverity})
                   </span>
-                )}
+                  {anachronismAnalysis.requiresImmediateReview && (
+                    <span className="inline-block px-2 py-0.5 bg-red-600 text-white text-xs font-medium rounded">
+                      IMMEDIATE REVIEW REQUIRED
+                    </span>
+                  )}
+                </div>
+                <BookmarkButton itemType="anachronism" itemId={section.id} />
               </div>
 
               {anachronismAnalysis.summary && (
@@ -675,6 +682,7 @@ export default async function SectionPage({
           {/* Pahlka Implementation Analysis */}
           {pahlkaImplementation?.hasImplementationIssues && (
             <PahlkaImplementationDisplay
+              sectionId={section.id}
               summary={pahlkaImplementation.summary}
               overallComplexity={pahlkaImplementation.overallComplexity}
               requiresTechnicalReview={pahlkaImplementation.requiresTechnicalReview}

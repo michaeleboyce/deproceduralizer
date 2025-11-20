@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, Code, Wrench, AlertTriangle } from 'lucide-react';
+import BookmarkButton from './BookmarkButton';
 
 /**
  * Simple hash function to create consistent IDs for phrases (matches highlight.ts)
@@ -46,6 +47,7 @@ interface PahlkaIndicator {
 }
 
 interface PahlkaImplementationDisplayProps {
+  sectionId: string;
   summary: string | null;
   overallComplexity: string | null;
   requiresTechnicalReview: boolean;
@@ -54,6 +56,7 @@ interface PahlkaImplementationDisplayProps {
 }
 
 export default function PahlkaImplementationDisplay({
+  sectionId,
   summary,
   overallComplexity,
   requiresTechnicalReview,
@@ -121,6 +124,9 @@ export default function PahlkaImplementationDisplay({
             <h2 className="text-xl font-semibold text-slate-900">
               Implementation Analysis
             </h2>
+            <div className="ml-auto">
+              <BookmarkButton itemType="implementation" itemId={sectionId} />
+            </div>
           </div>
 
           {/* Badges */}
