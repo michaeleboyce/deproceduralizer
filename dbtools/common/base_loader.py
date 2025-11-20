@@ -17,6 +17,7 @@ Subclasses must implement:
 
 import json
 import sys
+import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -132,6 +133,40 @@ class BaseLoader(ABC):
         """
         pass
 
+    def _retry_with_backoff(self, func, *args, max_retries=3, **kwargs):
+        """
+        Retry a function with exponential backoff.
+
+        Args:
+            func: Function to retry
+            max_retries: Maximum number of retry attempts
+            *args, **kwargs: Arguments to pass to func
+
+        Returns:
+            Result of func
+
+        Raises:
+            Last exception if all retries fail
+        """
+        last_exception = None
+        for attempt in range(max_retries):
+            try:
+                return func(*args, **kwargs)
+            except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+                # Transient database errors - retry
+                last_exception = e
+                if attempt < max_retries - 1:
+                    delay = 2 ** attempt  # 1s, 2s, 4s
+                    print(f"\n⚠ Database error (attempt {attempt + 1}/{max_retries}), retrying in {delay}s: {str(e)[:100]}", file=sys.stderr)
+                    time.sleep(delay)
+                else:
+                    print(f"\n✗ Database error after {max_retries} attempts: {str(e)[:100]}", file=sys.stderr)
+            except Exception as e:
+                # Non-transient errors - don't retry
+                raise
+
+        raise last_exception
+
     def run(self):
         """Main execution method - loads data from NDJSON file into database.
 
@@ -202,7 +237,7 @@ class BaseLoader(ABC):
 
                         # Process batch when full
                         if len(batch) >= self.batch_size:
-                            self._insert_batch(cursor, batch)
+                            self._retry_with_backoff(self._insert_batch, cursor, batch)
                             conn.commit()
                             batch = []
 
@@ -226,6 +261,8 @@ class BaseLoader(ABC):
                         continue
 
                     except Exception as e:
+                        # Rollback the failed transaction to recover
+                        conn.rollback()
                         self.error_count += 1
                         print(f"\nError processing record at line {lines_processed}: {e}", file=sys.stderr)
                         lines_processed += 1
@@ -234,7 +271,7 @@ class BaseLoader(ABC):
 
                 # Process remaining batch
                 if batch:
-                    self._insert_batch(cursor, batch)
+                    self._retry_with_backoff(self._insert_batch, cursor, batch)
                     conn.commit()
                     self.save_checkpoint(f.tell())
 

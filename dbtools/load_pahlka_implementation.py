@@ -64,7 +64,7 @@ class PahlkaImplementationLoader(BaseLoader):
             self._insert_highlights(cursor, batch, indicator_ids)
 
         except Exception as e:
-            self.error_count += len(batch)
+            # Don't increment error_count here - BaseLoader will handle it
             print(f"Error processing batch: {e}", file=sys.stderr)
             raise
 
