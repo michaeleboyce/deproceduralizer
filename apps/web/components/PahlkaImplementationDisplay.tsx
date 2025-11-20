@@ -3,6 +3,38 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, Code, Wrench, AlertTriangle } from 'lucide-react';
 
+/**
+ * Simple hash function to create consistent IDs for phrases (matches highlight.ts)
+ */
+function hashString(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  return Math.abs(hash).toString(36);
+}
+
+/**
+ * Scrolls to and briefly highlights a phrase in the section text
+ */
+function scrollToPhrase(phrase: string) {
+  const phraseHash = hashString(phrase.toLowerCase());
+  const dataId = `phrase-${phraseHash}-0`; // Scroll to first occurrence
+  const element = document.querySelector(`[data-phrase-id="${dataId}"]`);
+
+  if (element) {
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // Add temporary highlight animation
+    element.classList.add('ring-2', 'ring-yellow-400', 'ring-offset-1');
+    setTimeout(() => {
+      element.classList.remove('ring-2', 'ring-yellow-400', 'ring-offset-1');
+    }, 2000);
+  }
+}
+
 interface PahlkaIndicator {
   id: number;
   category: string;
@@ -99,7 +131,7 @@ export default function PahlkaImplementationDisplay({
               </span>
             )}
             {requiresTechnicalReview && (
-              <span className="inline-block px-3 py-1 bg-orange-600 text-white text-xs font-bold rounded-full flex items-center gap-1">
+              <span className="inline-flex px-3 py-1 bg-orange-600 text-white text-xs font-bold rounded-full items-center gap-1 whitespace-nowrap">
                 <AlertTriangle size={12} />
                 TECHNICAL REVIEW REQUIRED
               </span>
@@ -182,16 +214,18 @@ export default function PahlkaImplementationDisplay({
                     {indicator.matchedPhrases.length > 0 && (
                       <div>
                         <span className="text-xs font-semibold text-slate-600 block mb-1">
-                          Matched Phrases:
+                          Matched Phrases (click to scroll):
                         </span>
                         <div className="flex flex-wrap gap-1">
                           {indicator.matchedPhrases.map((phrase, phraseIdx) => (
-                            <span
+                            <button
                               key={phraseIdx}
-                              className="inline-block px-2 py-0.5 bg-yellow-100 text-yellow-900 text-xs rounded border border-yellow-300"
+                              onClick={() => scrollToPhrase(phrase)}
+                              className="inline-block px-2 py-0.5 bg-yellow-100 text-yellow-900 text-xs rounded border border-yellow-300 cursor-pointer hover:bg-yellow-200 hover:border-yellow-400 transition-colors"
+                              title="Click to scroll to this phrase in the section text"
                             >
                               &ldquo;{phrase}&rdquo;
-                            </span>
+                            </button>
                           ))}
                         </div>
                       </div>

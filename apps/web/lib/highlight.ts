@@ -1,5 +1,18 @@
 /**
- * Highlights specific phrases in HTML text by wrapping them in <mark> tags
+ * Simple hash function to create consistent IDs for phrases
+ */
+function hashString(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  return Math.abs(hash).toString(36);
+}
+
+/**
+ * Highlights specific phrases in HTML text by wrapping them in <mark> tags with unique IDs
  * @param html The HTML text to highlight
  * @param phrases Array of phrases to highlight
  * @returns HTML text with highlighted phrases
@@ -14,10 +27,17 @@ export function highlightPhrases(html: string, phrases: string[]): string {
   // Sort phrases by length (longest first) to avoid highlighting substrings
   const sortedPhrases = [...phrases].sort((a, b) => b.length - a.length);
 
+  // Track occurrence count for each phrase to create unique IDs
+  const phraseOccurrences: Record<string, number> = {};
+
   for (const phrase of sortedPhrases) {
     if (!phrase || phrase.trim().length === 0) {
       continue;
     }
+
+    // Initialize occurrence counter for this phrase
+    phraseOccurrences[phrase] = 0;
+    const phraseHash = hashString(phrase.toLowerCase());
 
     // Escape special regex characters in the phrase
     const escapedPhrase = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -35,7 +55,9 @@ export function highlightPhrases(html: string, phrases: string[]): string {
       if (before.includes("<mark") || after.includes("</mark>")) {
         return match;
       }
-      return `${before}<mark class="bg-yellow-200 text-yellow-900 font-medium px-1 rounded">${phraseMatch}</mark>${after}`;
+      const occurrenceId = phraseOccurrences[phrase]++;
+      const dataId = `phrase-${phraseHash}-${occurrenceId}`;
+      return `${before}<mark data-phrase-id="${dataId}" class="bg-yellow-200 text-yellow-900 font-medium px-1 rounded">${phraseMatch}</mark>${after}`;
     });
   }
 
@@ -45,6 +67,7 @@ export function highlightPhrases(html: string, phrases: string[]): string {
       continue;
     }
 
+    const phraseHash = hashString(phrase.toLowerCase());
     const escapedPhrase = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
     // Match phrase at word boundaries when not inside tags
@@ -55,10 +78,12 @@ export function highlightPhrases(html: string, phrases: string[]): string {
 
     result = result.replace(simpleRegex, (match) => {
       // Check if already highlighted
-      if (result.includes(`<mark class="bg-yellow-200 text-yellow-900 font-medium px-1 rounded">${match}</mark>`)) {
+      if (result.includes(`data-phrase-id="phrase-${phraseHash}-`) && result.includes(`>${match}</mark>`)) {
         return match;
       }
-      return `<mark class="bg-yellow-200 text-yellow-900 font-medium px-1 rounded">${match}</mark>`;
+      const occurrenceId = phraseOccurrences[phrase]++;
+      const dataId = `phrase-${phraseHash}-${occurrenceId}`;
+      return `<mark data-phrase-id="${dataId}" class="bg-yellow-200 text-yellow-900 font-medium px-1 rounded">${match}</mark>`;
     });
   }
 

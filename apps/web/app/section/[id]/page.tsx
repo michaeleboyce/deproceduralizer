@@ -25,6 +25,7 @@ import { highlightPhrases } from "@/lib/highlight";
 import Navigation from "@/components/Navigation";
 import MobileTableOfContents from "@/components/MobileTableOfContents";
 import PahlkaImplementationDisplay from "@/components/PahlkaImplementationDisplay";
+import MatchedPhraseChips from "@/components/MatchedPhraseChips";
 import parse, { DOMNode, Element } from 'html-react-parser';
 import { parseCitations } from "@/lib/citation";
 import { CitationLink } from "@/components/CitationLink";
@@ -644,23 +645,7 @@ export default async function SectionPage({
                         {indicator.explanation}
                       </p>
 
-                      {indicator.matchedPhrases.length > 0 && (
-                        <div className="mb-3">
-                          <span className="text-xs font-semibold text-slate-600 block mb-1">
-                            Matched Phrases:
-                          </span>
-                          <div className="flex flex-wrap gap-1">
-                            {indicator.matchedPhrases.map((phrase, phraseIdx) => (
-                              <span
-                                key={phraseIdx}
-                                className="inline-block px-2 py-0.5 bg-yellow-100 text-yellow-900 text-xs rounded border border-yellow-300"
-                              >
-                                &ldquo;{phrase}&rdquo;
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                      <MatchedPhraseChips phrases={indicator.matchedPhrases} />
 
                       {indicator.modernEquivalent && (
                         <div className="pt-2 border-t border-slate-200">
