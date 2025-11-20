@@ -245,6 +245,7 @@ class AnachronismsLoader(BaseLoader):
         sql = """
             INSERT INTO section_anachronism_highlights (indicator_id, matched_phrase)
             VALUES (%(indicator_id)s, %(matched_phrase)s)
+            ON CONFLICT (indicator_id, matched_phrase) DO NOTHING
         """
 
         execute_batch(cursor, sql, highlight_data)

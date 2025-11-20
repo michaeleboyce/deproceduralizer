@@ -391,11 +391,11 @@ export default async function SectionPage({
   const hasObligations =
     deadlines.length > 0 || amounts.length > 0 || referencesFrom.length > 0;
 
-  // Build table of contents
+  // Build table of contents (in display order)
   const tocItems = [
-    { id: "section-text", label: "Section Text" },
     anachronismAnalysis?.hasAnachronism && { id: "anachronisms", label: "Anachronisms" },
     pahlkaImplementation?.hasImplementationIssues && { id: "pahlka-implementation", label: "Implementation Analysis" },
+    { id: "section-text", label: "Section Text" },
     similarSections.length > 0 && { id: "similar-sections", label: "Similar Sections" },
     enhancedObligations.length > 0 && { id: "extracted-obligations", label: "Extracted Obligations" },
     hasObligations && { id: "obligations-references", label: "Obligations & References" },
