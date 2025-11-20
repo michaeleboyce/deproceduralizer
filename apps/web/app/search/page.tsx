@@ -60,7 +60,6 @@ function SearchPageContent() {
   // Load filter options on mount
   useEffect(() => {
     loadTitles();
-    loadObligationCategories();
   }, []);
 
   // Load chapters when title changes
@@ -72,6 +71,11 @@ function SearchPageContent() {
       setSelectedChapter("");
     }
   }, [selectedTitle]);
+
+  // Load obligation categories based on current filters
+  useEffect(() => {
+    loadObligationCategories(query, selectedTitle, selectedChapter, hasReporting);
+  }, [query, selectedTitle, selectedChapter, hasReporting]);
 
   // Auto-search from URL params
   useEffect(() => {
@@ -123,9 +127,20 @@ function SearchPageContent() {
     }
   };
 
-  const loadObligationCategories = async () => {
+  const loadObligationCategories = async (
+    searchQuery: string = "",
+    title: string = "",
+    chapter: string = "",
+    reporting: boolean = false
+  ) => {
     try {
-      const response = await fetch("/api/filters/obligations");
+      const params = new URLSearchParams();
+      if (searchQuery) params.append("query", searchQuery);
+      if (title) params.append("title", title);
+      if (chapter) params.append("chapter", chapter);
+      if (reporting) params.append("hasReporting", "true");
+
+      const response = await fetch(`/api/filters/obligations?${params.toString()}`);
       const data = await response.json();
       setAvailableObligationCategories(data.categories || []);
     } catch (err) {
