@@ -44,6 +44,7 @@ from typing import Optional, TypeVar, Type, Any
 from pydantic import BaseModel
 import requests
 from dotenv import load_dotenv
+from cerebras.cloud.sdk import Cerebras
 
 from common import setup_logging
 
@@ -58,24 +59,25 @@ T = TypeVar('T', bound=BaseModel)
 # API Configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 VERTEX_API_KEY = os.getenv("VERTEX_API_KEY")
+CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # Model configurations (same as before, but rate limits are informational only)
 # Vertex API models (Google AI Studio with higher limits)
 VERTEX_MODELS = [
-    {"name": "gemini-2.5-flash", "tier": "vertex"},
     {"name": "gemini-2.5-flash-lite", "tier": "vertex"},
-    {"name": "gemini-2.0-flash", "tier": "vertex"},
-    {"name": "gemini-2.0-flash-lite", "tier": "vertex"},
 ]
 
 # Standard Gemini API models (backup tier)
 GEMINI_MODELS = [
-    {"name": "gemini-2.5-flash", "tier": "gemini"},
     {"name": "gemini-2.5-flash-lite", "tier": "gemini"},
-    {"name": "gemini-2.0-flash", "tier": "gemini"},
-    {"name": "gemini-2.0-flash-lite", "tier": "gemini"},
+]
+
+# Cerebras models (third tier - before Groq)
+# Rate limits: 60K requests/day, 1M input tokens/day, 1M output tokens/day, 30 requests/min
+CEREBRAS_MODELS = [
+    {"name": "llama-3.3-70b", "tier": "cerebras"},
 ]
 
 GROQ_MODELS = [
@@ -169,7 +171,11 @@ class ErrorDrivenCascade:
                 self.retry_in_progress = model_to_retry[0]
 
                 attempts_since = self.total_attempts - model_to_retry[1]
-                logger.info(f"🔄 Retrying {model_to_retry[0]['name']} (failed {model_to_retry[2]} times, {attempts_since} attempts since last failure)")
+                YELLOW = '\033[93m'
+                CYAN = '\033[96m'
+                RESET = '\033[0m'
+                logger.info(f"{YELLOW}🔄 RETRY FROM FAILED QUEUE:{RESET} {CYAN}{model_to_retry[0]['name']}{RESET}")
+                logger.info(f"  └─ Failed {model_to_retry[2]} times, {attempts_since} attempts since last failure")
                 return model_to_retry[0]
 
             # Otherwise, try active models in order
@@ -192,7 +198,9 @@ class ErrorDrivenCascade:
 
             # If this was a retry that succeeded, celebrate!
             if self.retry_in_progress and self.retry_in_progress["name"] == model_name:
-                logger.info(f"✅ {model_name} is working again! Moving to top of active stack.")
+                GREEN = '\033[92m'
+                RESET = '\033[0m'
+                logger.info(f"{GREEN}✅ RETRY SUCCEEDED:{RESET} {model_name} is working again! Moving to top of active stack.")
                 self.retry_in_progress = None
 
             # Remove from failed queue if present
@@ -219,7 +227,9 @@ class ErrorDrivenCascade:
 
             # If this was a retry that failed, note it
             if self.retry_in_progress and self.retry_in_progress["name"] == model_name:
-                logger.info(f"❌ Retry failed for {model_name}, moving back to failed queue")
+                RED = '\033[91m'
+                RESET = '\033[0m'
+                logger.info(f"{RED}❌ RETRY FAILED:{RESET} {model_name} still not working, moving back to failed queue")
                 self.retry_in_progress = None
 
             # Remove from active models
@@ -282,17 +292,22 @@ class ErrorDrivenLLMClient:
             all_models.extend(GEMINI_MODELS)
             logger.info(f"✓ Added {len(GEMINI_MODELS)} Gemini models")
 
-        # 3. Groq (third tier)
+        # 3. Cerebras (third tier - high rate limits)
+        if CEREBRAS_API_KEY:
+            all_models.extend(CEREBRAS_MODELS)
+            logger.info(f"✓ Added {len(CEREBRAS_MODELS)} Cerebras models")
+
+        # 4. Groq (fourth tier)
         if GROQ_API_KEY:
             all_models.extend(GROQ_MODELS)
             logger.info(f"✓ Added {len(GROQ_MODELS)} Groq models")
 
-        # 4. OpenRouter (fourth tier)
+        # 5. OpenRouter (fifth tier)
         if OPENROUTER_API_KEY:
             all_models.extend(OPENROUTER_MODELS)
             logger.info(f"✓ Added {len(OPENROUTER_MODELS)} OpenRouter models")
 
-        # 5. Ollama (final fallback)
+        # 6. Ollama (final fallback)
         all_models.append(OLLAMA_CONFIG)
         logger.info(f"✓ Added Ollama fallback")
 
@@ -365,11 +380,17 @@ class ErrorDrivenLLMClient:
         prompt: str,
         response_model: Type[T],
         model_name: str,
+        section_id: Optional[str] = None,
         max_retries: int = 3
     ) -> Optional[T]:
         """Call Vertex AI (Google AI Studio) API with Instructor for validated responses."""
         if not VERTEX_API_KEY:
             return None
+
+        # Log API call with worker info
+        import threading
+        worker_id = threading.current_thread().name
+        logger.info(f"🔵 [{worker_id}] Calling Vertex API: {model_name}")
 
         try:
             headers = {"Content-Type": "application/json"}
@@ -438,14 +459,22 @@ Return only the JSON object, nothing else."""
                             return validated
 
                         except Exception as e:
-                            logger.debug(f"Vertex validation error (attempt {attempt + 1}/{max_retries}): {e}")
+                            logger.warning(f"❌ Vertex {model_name} validation error (attempt {attempt + 1}/{max_retries}):")
+                            logger.warning(f"   Full error: {str(e)}")
                             if attempt == max_retries - 1:
+                                logger.error(f"Failed to validate after {max_retries} attempts with Vertex {model_name}")
+                                logger.error(f"   Final error details: {str(e)}")
                                 return None
 
                 return None
 
+        except requests.exceptions.HTTPError as e:
+            logger.warning(f"❌ Vertex API HTTP error for {model_name}:")
+            logger.warning(f"   Status: {e.response.status_code if hasattr(e, 'response') else 'unknown'}")
+            logger.warning(f"   Full error: {str(e)}")
+            return None
         except Exception as e:
-            logger.error(f"Unexpected error with Vertex: {e}")
+            logger.error(f"❌ Unexpected error with Vertex {model_name}: {str(e)}")
             return None
 
     def _call_gemini_with_instructor(
@@ -453,11 +482,17 @@ Return only the JSON object, nothing else."""
         prompt: str,
         response_model: Type[T],
         model_name: str,
+        section_id: Optional[str] = None,
         max_retries: int = 3
     ) -> Optional[T]:
         """Call Gemini API with Instructor for validated responses."""
         if not GEMINI_API_KEY:
             return None
+
+        # Log API call with worker info
+        import threading
+        worker_id = threading.current_thread().name
+        logger.info(f"🔵 [{worker_id}] Calling Gemini API: {model_name}")
 
         try:
             headers = {"Content-Type": "application/json"}
@@ -525,8 +560,11 @@ Return only the JSON object, nothing else."""
                             return validated
 
                         except Exception as e:
-                            logger.debug(f"Validation error (attempt {attempt + 1}/{max_retries}): {e}")
+                            logger.warning(f"❌ Gemini {model_name} validation error (attempt {attempt + 1}/{max_retries}):")
+                            logger.warning(f"   Full error: {str(e)}")
                             if attempt == max_retries - 1:
+                                logger.error(f"Failed to validate after {max_retries} attempts with Gemini {model_name}")
+                                logger.error(f"   Final error details: {str(e)}")
                                 return None
                             continue
 
@@ -535,13 +573,131 @@ Return only the JSON object, nothing else."""
             return None
 
         except requests.exceptions.Timeout:
-            logger.debug(f"Timeout calling Gemini API ({model_name})")
+            logger.warning(f"⏱️  Gemini API timeout for {model_name} (30s)")
+            return None
+        except requests.exceptions.HTTPError as e:
+            logger.warning(f"❌ Gemini API HTTP error for {model_name}:")
+            logger.warning(f"   Status: {e.response.status_code if hasattr(e, 'response') else 'unknown'}")
+            logger.warning(f"   Full error: {str(e)}")
             return None
         except requests.exceptions.RequestException as e:
-            logger.debug(f"Error calling Gemini API ({model_name}): {e}")
+            logger.warning(f"❌ Gemini API request error for {model_name}: {str(e)}")
             return None
         except Exception as e:
-            logger.error(f"Unexpected error with Gemini ({model_name}): {e}")
+            logger.error(f"❌ Unexpected error with Gemini {model_name}: {str(e)}")
+            return None
+
+    def _call_cerebras_with_instructor(
+        self,
+        prompt: str,
+        response_model: Type[T],
+        model_name: str,
+        section_id: Optional[str] = None,
+        max_retries: int = 3
+    ) -> Optional[T]:
+        """Call Cerebras API with structured outputs."""
+        if not CEREBRAS_API_KEY:
+            return None
+
+        # Log API call with worker info
+        import threading
+        worker_id = threading.current_thread().name
+        logger.info(f"🔵 [{worker_id}] Calling Cerebras API: {model_name}")
+
+        try:
+            client = Cerebras(api_key=CEREBRAS_API_KEY)
+
+            schema_json = response_model.model_json_schema()
+            schema_str = str(schema_json)
+
+            structured_prompt = f"""{prompt}
+
+IMPORTANT: Respond with VALID JSON ONLY (no markdown, no explanations) that matches this exact schema:
+{schema_str}
+
+Return only the JSON object, nothing else."""
+
+            for attempt in range(max_retries):
+                try:
+                    chat_completion = client.chat.completions.create(
+                        messages=[
+                            {
+                                "role": "user",
+                                "content": structured_prompt,
+                            }
+                        ],
+                        model=model_name,
+                        temperature=0.1,
+                        max_tokens=30000
+                    )
+
+                    response_text = chat_completion.choices[0].message.content
+
+                    try:
+                        import re
+                        import json
+
+                        try:
+                            json_data = json.loads(response_text.strip())
+                        except json.JSONDecodeError:
+                            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+                            if json_match:
+                                json_data = json.loads(json_match.group(1))
+                            else:
+                                obj_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text, re.DOTALL)
+                                if obj_match:
+                                    json_data = json.loads(obj_match.group(0))
+                                else:
+                                    raise json.JSONDecodeError("No JSON found", response_text, 0)
+
+                        validated = response_model.model_validate(json_data)
+                        return validated
+
+                    except Exception as e:
+                        section_info = f" for section {section_id}" if section_id else ""
+                        logger.warning(f"❌ Cerebras {model_name} validation error{section_info} (attempt {attempt + 1}/{max_retries}):")
+                        logger.warning(f"   Error: {str(e)}")
+
+                        # Log the actual LLM response for debugging
+                        if 'response_text' in locals():
+                            response_preview = response_text[:500] + "..." if len(response_text) > 500 else response_text
+                            logger.warning(f"   LLM Response (first 500 chars): {response_preview}")
+
+                        # Log what was parsed vs what was expected
+                        if 'json_data' in locals() and isinstance(json_data, dict):
+                            expected_fields = list(response_model.model_fields.keys())
+                            received_fields = list(json_data.keys())
+                            missing_fields = [f for f in expected_fields if f not in received_fields]
+                            extra_fields = [f for f in received_fields if f not in expected_fields]
+
+                            if missing_fields:
+                                logger.warning(f"   Missing required fields: {missing_fields}")
+                            if extra_fields:
+                                logger.warning(f"   Extra fields (not in model): {extra_fields}")
+                            logger.warning(f"   Received fields: {received_fields}")
+
+                        if attempt == max_retries - 1:
+                            logger.error(f"Failed to validate after {max_retries} attempts with Cerebras {model_name}")
+                            return None
+                        continue
+
+                except Exception as api_error:
+                    # Check if it's a rate limit error
+                    error_str = str(api_error)
+                    if "429" in error_str or "rate" in error_str.lower():
+                        logger.debug(f"Cerebras rate limited for {model_name}")
+                        return None
+
+                    # For other errors, log and retry
+                    if attempt == max_retries - 1:
+                        logger.warning(f"❌ Cerebras API error for {model_name}: {str(api_error)}")
+                        return None
+                    continue
+
+            return None
+
+        except Exception as e:
+            logger.error(f"❌ Unexpected error with Cerebras {model_name}: {str(e)}")
             return None
 
     def _call_groq_with_instructor(
@@ -549,11 +705,17 @@ Return only the JSON object, nothing else."""
         prompt: str,
         response_model: Type[T],
         model_name: str,
+        section_id: Optional[str] = None,
         max_retries: int = 3
     ) -> Optional[T]:
         """Call Groq API with structured outputs."""
         if not GROQ_API_KEY:
             return None
+
+        # Log API call with worker info
+        import threading
+        worker_id = threading.current_thread().name
+        logger.info(f"🔵 [{worker_id}] Calling Groq API: {model_name}")
 
         try:
             schema_json = response_model.model_json_schema()
@@ -612,21 +774,48 @@ Return only the JSON object, nothing else."""
                     return validated
 
                 except Exception as e:
-                    logger.debug(f"Validation error (attempt {attempt + 1}/{max_retries}): {e}")
+                    section_info = f" for section {section_id}" if section_id else ""
+                    logger.warning(f"❌ Groq {model_name} validation error{section_info} (attempt {attempt + 1}/{max_retries}):")
+                    logger.warning(f"   Error: {str(e)}")
+
+                    # Log the actual LLM response for debugging
+                    if 'response_text' in locals():
+                        response_preview = response_text[:500] + "..." if len(response_text) > 500 else response_text
+                        logger.warning(f"   LLM Response (first 500 chars): {response_preview}")
+
+                    # Log what was parsed vs what was expected
+                    if 'json_data' in locals() and isinstance(json_data, dict):
+                        expected_fields = list(response_model.model_fields.keys())
+                        received_fields = list(json_data.keys())
+                        missing_fields = [f for f in expected_fields if f not in received_fields]
+                        extra_fields = [f for f in received_fields if f not in expected_fields]
+
+                        if missing_fields:
+                            logger.warning(f"   Missing required fields: {missing_fields}")
+                        if extra_fields:
+                            logger.warning(f"   Extra fields (not in model): {extra_fields}")
+                        logger.warning(f"   Received fields: {received_fields}")
+
                     if attempt == max_retries - 1:
+                        logger.error(f"Failed to validate after {max_retries} attempts with Groq {model_name}{section_info}")
                         return None
                     continue
 
             return None
 
         except requests.exceptions.Timeout:
-            logger.debug(f"Timeout calling Groq API ({model_name})")
+            logger.warning(f"⏱️  Groq API timeout for {model_name} (30s)")
+            return None
+        except requests.exceptions.HTTPError as e:
+            logger.warning(f"❌ Groq API HTTP error for {model_name}:")
+            logger.warning(f"   Status: {e.response.status_code if hasattr(e, 'response') else 'unknown'}")
+            logger.warning(f"   Full error: {str(e)}")
             return None
         except requests.exceptions.RequestException as e:
-            logger.debug(f"Error calling Groq API ({model_name}): {e}")
+            logger.warning(f"❌ Groq API request error for {model_name}: {str(e)}")
             return None
         except Exception as e:
-            logger.error(f"Unexpected error with Groq ({model_name}): {e}")
+            logger.error(f"❌ Unexpected error with Groq {model_name}: {str(e)}")
             return None
 
     def _call_openrouter_with_instructor(
@@ -634,11 +823,17 @@ Return only the JSON object, nothing else."""
         prompt: str,
         response_model: Type[T],
         model_name: str,
+        section_id: Optional[str] = None,
         max_retries: int = 3
     ) -> Optional[T]:
         """Call OpenRouter API with structured outputs."""
         if not OPENROUTER_API_KEY:
             return None
+
+        # Log API call with worker info
+        import threading
+        worker_id = threading.current_thread().name
+        logger.info(f"🔵 [{worker_id}] Calling OpenRouter API: {model_name}")
 
         try:
             schema_json = response_model.model_json_schema()
@@ -699,21 +894,50 @@ Return only the JSON object, nothing else."""
                     return validated
 
                 except Exception as e:
-                    logger.debug(f"Validation error (attempt {attempt + 1}/{max_retries}): {e}")
+                    section_info = f" for section {section_id}" if section_id else ""
+                    logger.warning(f"❌ OpenRouter {model_name} validation error{section_info} (attempt {attempt + 1}/{max_retries}):")
+                    logger.warning(f"   Error: {str(e)}")
+
+                    # Log the actual LLM response for debugging
+                    if 'response_text' in locals():
+                        response_preview = response_text[:500] + "..." if len(response_text) > 500 else response_text
+                        logger.warning(f"   LLM Response (first 500 chars): {response_preview}")
+
+                    # Log what was parsed vs what was expected
+                    if 'json_data' in locals() and isinstance(json_data, dict):
+                        expected_fields = list(response_model.model_fields.keys())
+                        received_fields = list(json_data.keys())
+                        missing_fields = [f for f in expected_fields if f not in received_fields]
+                        extra_fields = [f for f in received_fields if f not in expected_fields]
+
+                        if missing_fields:
+                            logger.warning(f"   Missing required fields: {missing_fields}")
+                        if extra_fields:
+                            logger.warning(f"   Extra fields (not in model): {extra_fields}")
+                        logger.warning(f"   Received fields: {received_fields}")
+
                     if attempt == max_retries - 1:
+                        logger.error(f"Failed to validate after {max_retries} attempts with OpenRouter {model_name}")
                         return None
                     continue
 
             return None
 
         except requests.exceptions.Timeout:
-            logger.debug(f"Timeout calling OpenRouter API ({model_name})")
+            logger.warning(f"⏱️  OpenRouter API timeout for {model_name} (30s)")
+            return None
+        except requests.exceptions.HTTPError as e:
+            logger.warning(f"❌ OpenRouter API HTTP error for {model_name}:")
+            logger.warning(f"   Status: {e.response.status_code if hasattr(e, 'response') else 'unknown'}")
+            logger.warning(f"   Full error: {str(e)}")
+            if hasattr(e, 'response') and e.response.text:
+                logger.warning(f"   Response body: {e.response.text[:500]}")
             return None
         except requests.exceptions.RequestException as e:
-            logger.debug(f"Error calling OpenRouter API ({model_name}): {e}")
+            logger.warning(f"❌ OpenRouter API request error for {model_name}: {str(e)}")
             return None
         except Exception as e:
-            logger.error(f"Unexpected error with OpenRouter ({model_name}): {e}")
+            logger.error(f"❌ Unexpected error with OpenRouter {model_name}: {str(e)}")
             return None
 
     def _repair_json_structure(self, json_data: Any, response_model: Type[T]) -> Any:
@@ -731,9 +955,15 @@ Return only the JSON object, nothing else."""
         prompt: str,
         response_model: Type[T],
         model_name: str = OLLAMA_MODEL,
+        section_id: Optional[str] = None,
         max_retries: int = 3
     ) -> Optional[T]:
         """Call Ollama API with validated responses."""
+        # Log API call with worker info
+        import threading
+        worker_id = threading.current_thread().name
+        logger.info(f"🔵 [{worker_id}] Calling Ollama API: {model_name}")
+
         try:
             schema_json = response_model.model_json_schema()
             schema_str = str(schema_json)
@@ -791,21 +1021,48 @@ Return only the JSON object, nothing else."""
                     return validated
 
                 except Exception as e:
-                    logger.debug(f"Validation error (attempt {attempt + 1}/{max_retries}): {e}")
+                    section_info = f" for section {section_id}" if section_id else ""
+                    logger.warning(f"❌ Ollama validation error{section_info} (attempt {attempt + 1}/{max_retries}):")
+                    logger.warning(f"   Error: {str(e)}")
+
+                    # Log the actual LLM response for debugging
+                    if 'response_text' in locals():
+                        response_preview = response_text[:500] + "..." if len(response_text) > 500 else response_text
+                        logger.warning(f"   LLM Response (first 500 chars): {response_preview}")
+
+                    # Log what was parsed vs what was expected
+                    if 'json_data' in locals() and isinstance(json_data, dict):
+                        expected_fields = list(response_model.model_fields.keys())
+                        received_fields = list(json_data.keys())
+                        missing_fields = [f for f in expected_fields if f not in received_fields]
+                        extra_fields = [f for f in received_fields if f not in expected_fields]
+
+                        if missing_fields:
+                            logger.warning(f"   Missing required fields: {missing_fields}")
+                        if extra_fields:
+                            logger.warning(f"   Extra fields (not in model): {extra_fields}")
+                        logger.warning(f"   Received fields: {received_fields}")
+
                     if attempt == max_retries - 1:
+                        logger.error(f"Failed to validate after {max_retries} attempts with Ollama")
                         return None
                     continue
 
             return None
 
         except requests.exceptions.Timeout:
-            logger.debug(f"Timeout calling Ollama")
+            logger.warning(f"⏱️  Ollama API timeout (90s)")
+            return None
+        except requests.exceptions.HTTPError as e:
+            logger.warning(f"❌ Ollama API HTTP error:")
+            logger.warning(f"   Status: {e.response.status_code if hasattr(e, 'response') else 'unknown'}")
+            logger.warning(f"   Full error: {str(e)}")
             return None
         except requests.exceptions.RequestException as e:
-            logger.debug(f"Error calling Ollama API: {e}")
+            logger.warning(f"❌ Ollama API request error: {str(e)}")
             return None
         except Exception as e:
-            logger.error(f"Unexpected error with Ollama: {e}")
+            logger.error(f"❌ Unexpected error with Ollama: {str(e)}")
             return None
 
     def generate(
@@ -850,15 +1107,17 @@ Return only the JSON object, nothing else."""
             logger.debug(f"[Worker {worker_id}] Trying {tier}:{model_name} for {section_id or 'unknown'}")
 
             if tier == "vertex":
-                result = self._call_vertex_with_instructor(prompt, response_model, model_name)
+                result = self._call_vertex_with_instructor(prompt, response_model, model_name, section_id)
             elif tier == "gemini":
-                result = self._call_gemini_with_instructor(prompt, response_model, model_name)
+                result = self._call_gemini_with_instructor(prompt, response_model, model_name, section_id)
+            elif tier == "cerebras":
+                result = self._call_cerebras_with_instructor(prompt, response_model, model_name, section_id)
             elif tier == "groq":
-                result = self._call_groq_with_instructor(prompt, response_model, model_name)
+                result = self._call_groq_with_instructor(prompt, response_model, model_name, section_id)
             elif tier == "openrouter":
-                result = self._call_openrouter_with_instructor(prompt, response_model, model_name)
+                result = self._call_openrouter_with_instructor(prompt, response_model, model_name, section_id)
             elif tier == "ollama":
-                result = self._call_ollama_with_instructor(prompt, response_model, model_name)
+                result = self._call_ollama_with_instructor(prompt, response_model, model_name, section_id)
 
             if result:
                 # Success!

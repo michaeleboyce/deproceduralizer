@@ -40,6 +40,10 @@ REPORTING_INDICATORS = [
     "This section specifies agencies must file reports with the Council",
     "This section describes quarterly or monthly reporting obligations",
     "This section requires public disclosure and transparency reports",
+    # Additional light-duty indicators to broaden recall without extra calls
+    "This section requires compiling and furnishing data or statistics",
+    "This section requires maintaining and publishing records or registries",
+    "This section requires financial reports or audits to be submitted",
 ]
 
 CHECKPOINT_FILE = Path("data/interim/cross_encoder_reporting_filter.ckpt")

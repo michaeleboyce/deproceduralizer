@@ -28,6 +28,7 @@ logger = setup_logging(__name__)
 
 OLLAMA_HOST = "http://localhost:11434"
 CHECKPOINT_FILE = Path("data/interim/similarities.ckpt")
+EMBEDDING_CACHE_FILE = Path("data/interim/embeddings_cache.pkl")
 
 
 def get_embedding(text: str, model: str = "nomic-embed-text") -> np.ndarray:
@@ -86,6 +87,28 @@ def save_checkpoint(checkpoint: dict):
     logger.debug(f"Saved checkpoint: {len(checkpoint['embeddings'])} embeddings")
 
 
+def load_embedding_cache() -> dict:
+    """Load persistent embedding cache if it exists."""
+    if EMBEDDING_CACHE_FILE.exists():
+        try:
+            with open(EMBEDDING_CACHE_FILE, 'rb') as f:
+                cache = pickle.load(f)
+            # cache format: {section_id: embedding_ndarray}
+            logger.info(f"📦 Loaded embedding cache with {len(cache)} entries")
+            return cache
+        except Exception as e:
+            logger.warning(f"Failed to load embedding cache: {e}; starting fresh")
+    return {}
+
+
+def save_embedding_cache(cache: dict):
+    """Persist embedding cache to disk."""
+    EMBEDDING_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(EMBEDDING_CACHE_FILE, 'wb') as f:
+        pickle.dump(cache, f)
+    logger.debug(f"Saved embedding cache with {len(cache)} entries")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Compute semantic similarity between DC Code sections"
@@ -110,7 +133,7 @@ def main():
     parser.add_argument(
         "--min-similarity",
         type=float,
-        default=0.7,
+        default=0.8,
         help="Minimum similarity threshold (0.0 to 1.0)"
     )
     parser.add_argument(
@@ -152,8 +175,11 @@ def main():
     else:
         logger.info(f"📊 Using Flat indexing (exact search)")
 
-    # Load checkpoint
+    # Load checkpoint and embedding cache
     checkpoint = load_checkpoint()
+    embedding_cache = load_embedding_cache()
+    if embedding_cache:
+        logger.info(f"Reusing {len(embedding_cache)} cached embeddings (will extend if new sections appear)")
 
     # Step 1: Generate embeddings for all sections
     logger.info("Step 1: Generating embeddings...")
@@ -184,6 +210,9 @@ def main():
     total_sections = len(sections_to_process)
     logger.info(f"Found {total_sections} sections to process")
 
+    cache_hits = 0
+    cache_misses = 0
+
     # Generate embeddings with progress bar
     for section in tqdm(sections_to_process, desc="Generating embeddings", unit="section"):
         section_id = section["id"]
@@ -193,8 +222,14 @@ def main():
             continue
 
         try:
-            # Get embedding from Ollama
-            embedding = get_embedding(section["text"])
+            # Use cache if available
+            if section_id in embedding_cache:
+                embedding = embedding_cache[section_id]
+                cache_hits += 1
+            else:
+                embedding = get_embedding(section["text"])
+                embedding_cache[section_id] = embedding
+                cache_misses += 1
 
             # Store embedding and metadata
             checkpoint["embeddings"].append((section_id, embedding))
@@ -204,6 +239,7 @@ def main():
             # Save checkpoint every 10 sections
             if len(checkpoint["embeddings"]) % 10 == 0:
                 save_checkpoint(checkpoint)
+                save_embedding_cache(embedding_cache)
 
         except Exception as e:
             logger.error(f"Failed to get embedding for {section_id}: {e}")
@@ -211,6 +247,9 @@ def main():
 
     # Final checkpoint save
     save_checkpoint(checkpoint)
+    save_embedding_cache(embedding_cache)
+    if cache_hits or cache_misses:
+        logger.info(f"Embedding cache stats: hits={cache_hits}, misses={cache_misses}")
 
     logger.info(f"Generated {len(checkpoint['embeddings'])} embeddings")
 

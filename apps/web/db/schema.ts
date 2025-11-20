@@ -171,6 +171,7 @@ export const sectionSimilarityClassifications = pgTable("section_similarity_clas
   explanation: text("explanation").notNull(),
   modelUsed: text("model_used").notNull(),
   analyzedAt: timestamp("analyzed_at", { withTimezone: true }).notNull(),
+  potentialAnachronism: boolean("potential_anachronism").default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 }, (table) => ({
   pk: primaryKey({ columns: [table.jurisdiction, table.sectionA, table.sectionB] }),

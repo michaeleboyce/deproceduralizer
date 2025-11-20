@@ -5,6 +5,41 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
 #===============================================================================
+# STEP 0: Deduplication Preprocessor (Auto-run before LLM steps)
+#===============================================================================
+
+run_step_0_deduplicate() {
+    local corpus=$1
+    local suffix=$(get_output_suffix "$corpus")
+    local sections_file="data/outputs/sections${suffix}.ndjson"
+    local dedup_map="data/interim/section_deduplication_map.pkl"
+    local dedup_stats="data/interim/dedup_stats.json"
+
+    # Skip if dedup map already exists and is newer than sections file
+    if [[ -f "$dedup_map" ]] && [[ "$dedup_map" -nt "$sections_file" ]]; then
+        log_info "Deduplication map already exists and is up-to-date, skipping..."
+        return 0
+    fi
+
+    log_info "Running deduplication preprocessor..."
+
+    python pipeline/00_deduplicate_sections.py || {
+        log_error "Deduplication failed"
+        exit 1
+    }
+
+    if [[ -f "$dedup_stats" ]]; then
+        # Extract and display key stats
+        local total=$(grep -o '"total_sections": [0-9]*' "$dedup_stats" | cut -d' ' -f2)
+        local duplicates=$(grep -o '"duplicate_sections": [0-9]*' "$dedup_stats" | cut -d' ' -f2)
+        local ratio=$(grep -o '"deduplication_ratio": "[^"]*"' "$dedup_stats" | cut -d'"' -f4)
+        log_success "Deduplication complete: $duplicates/$total sections are duplicates ($ratio)"
+    else
+        log_success "Deduplication complete"
+    fi
+}
+
+#===============================================================================
 # STEP 1: Parse XML Sections
 #===============================================================================
 
@@ -141,7 +176,7 @@ run_step_4_compute_similarities() {
         --in "$input_file" \
         --out "$output_file" \
         --top-k 10 \
-        --min-similarity 0.7 || {
+        --min-similarity 0.8 || {
         log_error "Similarity computation failed"
         exit 1
     }
@@ -166,6 +201,10 @@ run_step_5_detect_reporting() {
     log_step 5 7 "Detect reporting (LLM)" "IN_PROGRESS"
     echo ""
     log_info "This step uses LLM and may take 10-20 minutes..."
+
+    # Run deduplication preprocessor (auto-run before first LLM step)
+    run_step_0_deduplicate "$corpus"
+    echo ""
 
     # Check Ollama
     check_ollama || {
@@ -340,6 +379,65 @@ run_step_7_detect_anachronisms() {
 }
 
 #===============================================================================
+# STEP 8: Pahlka Implementation Analysis (LLM)
+#===============================================================================
+
+run_step_8_pahlka_implementation() {
+    local corpus=$1
+    local start_time=$(date +%s)
+
+    log_step 8 8 "Pahlka implementation analysis (LLM)" "IN_PROGRESS"
+    echo ""
+    log_info "This step analyzes sections for implementation complexity (Pahlka framework)..."
+
+    # Check Ollama
+    check_ollama || {
+        log_error "Ollama is required for Pahlka implementation analysis"
+        exit 1
+    }
+
+    local suffix=$(get_output_suffix "$corpus")
+    local sections_file="data/outputs/sections${suffix}.ndjson"
+    local obligations_file="data/outputs/obligations_enhanced${suffix}.ndjson"
+    local reporting_file="data/outputs/reporting${suffix}.ndjson"
+    local output_file="data/outputs/pahlka_implementation${suffix}.ndjson"
+
+    # Validate inputs exist
+    if [[ ! -f "$sections_file" ]]; then
+        log_error "Input file not found: $sections_file"
+        echo "Run step 1 first: Parse XML sections"
+        exit 1
+    fi
+
+    if [[ ! -f "$obligations_file" ]]; then
+        log_warning "Obligations file not found: $obligations_file"
+        log_warning "Pahlka analysis works best with obligations data from step 3"
+    fi
+
+    if [[ ! -f "$reporting_file" ]]; then
+        log_warning "Reporting file not found: $reporting_file"
+        log_warning "Pahlka analysis works best with reporting data from step 5"
+    fi
+
+    python pipeline/70_llm_pahlka_implementation.py \
+        --sections "$sections_file" \
+        --obligations "$obligations_file" \
+        --reporting "$reporting_file" \
+        --out "$output_file" || {
+        log_error "Pahlka implementation analysis failed"
+        exit 1
+    }
+
+    validate_output_file "$output_file" "Pahlka implementation analysis"
+
+    local analysis_count=$(wc -l < "$output_file" | tr -d ' ')
+    local duration=$(($(date +%s) - start_time))
+
+    log_step 8 8 "Pahlka implementation analysis (LLM)" "DONE"
+    echo " [$(format_duration $duration) - $analysis_count sections analyzed]"
+}
+
+#===============================================================================
 # STEP DISPATCHER
 #===============================================================================
 
@@ -355,6 +453,7 @@ run_pipeline_step() {
         5) run_step_5_detect_reporting "$corpus" ;;
         6) run_step_6_classify_similarities "$corpus" ;;
         7) run_step_7_detect_anachronisms "$corpus" ;;
+        8) run_step_8_pahlka_implementation "$corpus" ;;
         *)
             log_error "Invalid step number: $step_num"
             exit 1

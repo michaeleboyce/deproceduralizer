@@ -15,18 +15,19 @@ NC='\033[0m' # No Color
 validate_corpus() {
     local corpus=$1
     case "$corpus" in
-        small|small_plus|medium|large) return 0 ;;
+        small|small_plus|medium|large|1000) return 0 ;;
         *)
             echo -e "${RED}ERROR: Invalid corpus '$corpus'${NC}" >&2
-            echo "Valid options: small, small_plus, medium, large" >&2
+            echo "Valid options: small, small_plus, medium, 1000, large" >&2
             echo "" >&2
             echo "Corpus definitions:" >&2
             echo "  small      - Titles 1-2 (~100 sections)" >&2
-            echo "  small_plus - Titles 1-4 (~200 sections)" >&2
-            echo "  medium     - Titles 1-7 (~350-400 sections)" >&2
+            echo "  small_plus - Titles 1-4 (~350 sections)" >&2
+            echo "  medium     - Titles 1-7 (~600 sections)" >&2
+            echo "  1000       - Titles 1-5 (first ~200 per title, ~1000 sections)" >&2
             echo "  large      - All DC Code (~50 titles)" >&2
             echo "" >&2
-            echo "Usage: $0 --corpus={small|small_plus|medium|large} [OPTIONS]" >&2
+            echo "Usage: $0 --corpus={small|small_plus|medium|1000|large} [OPTIONS]" >&2
             exit 1
             ;;
     esac
@@ -34,7 +35,7 @@ validate_corpus() {
 
 validate_steps() {
     local steps=$1
-    local max_steps=6
+    local max_steps=8
 
     # Parse step range/list (e.g., "1-3" or "1,3,5" or "all")
     if [[ "$steps" == "all" ]]; then
@@ -73,7 +74,7 @@ validate_steps() {
 
 validate_tables() {
     local tables=$1
-    local valid_tables="sections structure refs obligations similarities reporting classifications anachronisms"
+    local valid_tables="sections structure refs obligations similarities reporting classifications anachronisms pahlka_implementation"
 
     if [[ "$tables" == "all" ]]; then
         return 0
@@ -135,6 +136,7 @@ validate_source_directory() {
         small) source_dir="data/subsets" ;;
         small_plus) source_dir="data/subsets_small_plus" ;;
         medium) source_dir="data/subsets_medium" ;;
+        1000) source_dir="data/subsets_1000" ;;
         large) source_dir="data/raw/dc-law-xml/us/dc/council/code/titles" ;;
     esac
 
@@ -149,6 +151,9 @@ validate_source_directory() {
                 ;;
             medium)
                 echo "Run first: ./scripts/make_subset_medium.sh" >&2
+                ;;
+            1000)
+                echo "Run first: ./scripts/make_subset_1000.sh" >&2
                 ;;
             large)
                 echo "Run first: git clone https://github.com/DCCouncil/law-xml.git data/raw/dc-law-xml" >&2
@@ -212,6 +217,8 @@ list_available_steps() {
     echo "  4: Compute similarities" >&2
     echo "  5: Detect reporting requirements (LLM)" >&2
     echo "  6: Classify similarity relationships (LLM)" >&2
+    echo "  7: Detect anachronisms (LLM)" >&2
+    echo "  8: Pahlka implementation analysis (LLM)" >&2
 }
 
 progress_bar() {
@@ -398,6 +405,7 @@ get_source_dir() {
         small) echo "data/subsets" ;;
         small_plus) echo "data/subsets_small_plus" ;;
         medium) echo "data/subsets_medium" ;;
+        1000) echo "data/subsets_1000" ;;
         large) echo "data/raw/dc-law-xml/us/dc/council/code/titles" ;;
     esac
 }

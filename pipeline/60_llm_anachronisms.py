@@ -37,6 +37,30 @@ WORKERS = int(os.getenv("PIPELINE_WORKERS", "1"))
 CHECKPOINT_FILE = Path("data/interim/anachronisms.ckpt")
 MAX_TEXT_LENGTH = 3000  # Truncate text to avoid token limits
 
+# Lightweight keyword scan to catch obvious anachronisms without LLM
+ANACHRONISM_KEYWORDS = [
+    # Discriminatory or outdated social terms
+    "jim crow", "colored school", "negro", "illegitimate child", "bastard",
+    "lunatic", "idiot", "feeble-minded", "insane person",
+    # Defunct or obsolete tech/transportation
+    "telegram", "telegraph", "typewriter", "carbon copy", "fax", "telex", "microfiche",
+    "floppy disk", "vhs", "pager", "beeper", "pneumatic tube",
+    "horse and buggy", "hitching post", "trolley car", "stagecoach", "canal boat",
+    # Explicitly gendered titles/roles
+    "fireman", "policeman", "mailman", "chairman", "foreman", "salesman", "stewardess", "milkman",
+    "lamplighter", "peddler", "hawker",
+    # Old measurements/currency
+    "furlong", "rod", "perch", "hogshead", "bushel", "mills", "gold coin", "poll tax",
+    # Health/legal/other
+    "venereal disease", "dropsy", "consumption", "blasphemy", "sabbath laws",
+    "intoxicating liquor", "bootlegger", "civil defense", "fallout shelter",
+    # Defunct/renamed agencies and boards
+    "immigration and naturalization service", "atomic energy commission",
+    "civil aeronautics board", "interstate commerce commission",
+    # Superseded punitive constructs
+    "debtor's prison", "debtors' prison", "chain gang", "vagrancy law", "loitering ordinance", "insane asylum", "lunatic asylum",
+]
+
 
 def collect_flagged_sections(
     obligations_file: Path,
@@ -77,10 +101,16 @@ def collect_flagged_sections(
     return flagged_sections
 
 
+def has_anachronism_keywords(text: str) -> bool:
+    """Cheap keyword filter for obvious anachronisms."""
+    lower = text.lower()
+    return any(keyword in lower for keyword in ANACHRONISM_KEYWORDS)
+
+
 def analyze_anachronisms(
     text: str,
     section_id: str,
-    client: LLMClient
+    client  # LLM client from create_llm_client()
 ) -> tuple[AnachronismAnalysis, str]:
     """
     Deep anachronism analysis using LLM with comprehensive indicator detection.
@@ -114,6 +144,7 @@ TASK: Identify ALL anachronistic indicators in this section across the following
 
 3. **obsolete_legal_terms**: Offensive disability/mental health terms
    - Examples: "lunatic", "insane person", "idiot", "feeble-minded", "leper"
+   - Include institutions like "insane asylum" or "lunatic asylum"
 
 **HIGH SEVERITY** (Defunct Entities/Structures):
 4. **defunct_agency**: References to abolished government agencies
@@ -162,6 +193,11 @@ TASK: Identify ALL anachronistic indicators in this section across the following
 
 18. **obsolete_economic**: Historical currency or economic systems
     - Examples: "mills" (1/10 cent), "gold coin", "poll tax"
+
+ALSO FLAG superseded punitive constructs (context determines severity):
+- Debtor's prison / debtors' prison
+- Chain gangs
+- Criminalization of vagrancy/loitering in discriminatory form
 
 FOR EACH INDICATOR FOUND:
 - **category**: One of the 18 categories above
@@ -229,7 +265,7 @@ def save_checkpoint(checkpoint: dict):
     logger.debug(f"💾 Checkpoint saved: {len(checkpoint['processed_ids'])} sections processed")
 
 
-def process_section(section_id: str, text: str, client: LLMClient) -> tuple[dict | None, str]:
+def process_section(section_id: str, text: str, client) -> tuple[dict | None, str]:
     """
     Process a single section and return the result record.
 
@@ -331,13 +367,24 @@ def main():
     logger.info(f"\n📂 Loading section text from {sections_file}")
     sections_text = {}
     reader = NDJSONReader(str(sections_file))
+    keyword_hits = 0
     for section in reader:
         section_id = section.get("id")
         text_plain = section.get("text_plain", "")
-        if section_id and section_id in flagged_sections:
+        if not section_id or not text_plain:
+            continue
+
+        keyword_flag = has_anachronism_keywords(text_plain)
+        if keyword_flag and section_id not in flagged_sections:
+            keyword_hits += 1
+            flagged_sections.add(section_id)
+
+        if section_id in flagged_sections:
             sections_text[section_id] = text_plain
 
     logger.info(f"✅ Loaded {len(sections_text)} flagged section texts")
+    if keyword_hits:
+        logger.info(f"🔎 Keyword prefilter added {keyword_hits} sections for analysis")
 
     # Load checkpoint
     checkpoint = load_checkpoint()

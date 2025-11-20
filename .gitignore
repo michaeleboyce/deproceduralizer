@@ -28,12 +28,17 @@ out/
 # Data directories
 data/raw/*
 data/subsets/*
+data/subsets_*/
 data/interim/*
 data/outputs/*
 !data/raw/.gitkeep
 !data/subsets/.gitkeep
 !data/interim/.gitkeep
 !data/outputs/.gitkeep
+
+# Additional data files
+*.ndjson
+*.jsonl
 
 # Codebase exports
 exports/
@@ -42,6 +47,9 @@ exports/
 *.state
 *.ckpt
 *.checkpoint
+
+# Pipeline logs
+logs/
 
 # OS
 .DS_Store
@@ -58,6 +66,9 @@ Thumbs.db
 .pytest_cache/
 coverage/
 .coverage
+
+# MCP/Playwright artifacts
+.playwright-mcp/
 
 # Build artifacts
 *.pyc

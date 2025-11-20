@@ -43,18 +43,19 @@ class ClassificationsLoader(BaseLoader):
         sql = """
             INSERT INTO section_similarity_classifications
               (jurisdiction, section_a, section_b, classification, explanation,
-               model_used, analyzed_at, cross_encoder_label, cross_encoder_score)
+               model_used, analyzed_at, cross_encoder_label, cross_encoder_score, potential_anachronism)
             VALUES
               (%(jurisdiction)s, %(section_a)s, %(section_b)s, %(classification)s,
                %(explanation)s, %(model_used)s, %(analyzed_at)s,
-               %(cross_encoder_label)s, %(cross_encoder_score)s)
+               %(cross_encoder_label)s, %(cross_encoder_score)s, %(potential_anachronism)s)
             ON CONFLICT (jurisdiction, section_a, section_b) DO UPDATE
               SET classification = EXCLUDED.classification,
                   explanation = EXCLUDED.explanation,
                   model_used = EXCLUDED.model_used,
                   analyzed_at = EXCLUDED.analyzed_at,
                   cross_encoder_label = EXCLUDED.cross_encoder_label,
-                  cross_encoder_score = EXCLUDED.cross_encoder_score
+                  cross_encoder_score = EXCLUDED.cross_encoder_score,
+                  potential_anachronism = EXCLUDED.potential_anachronism
         """
 
         # Normalize batch to ensure cross-encoder fields exist (backwards compatibility)
@@ -65,6 +66,8 @@ class ClassificationsLoader(BaseLoader):
                 normalized['cross_encoder_label'] = None
             if 'cross_encoder_score' not in normalized:
                 normalized['cross_encoder_score'] = None
+            if 'potential_anachronism' not in normalized:
+                normalized['potential_anachronism'] = False
             normalized_batch.append(normalized)
 
         try:

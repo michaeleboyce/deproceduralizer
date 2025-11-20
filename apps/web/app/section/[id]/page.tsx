@@ -340,6 +340,13 @@ export default async function SectionPage({
     hasObligations && { id: "obligations-references", label: "Obligations & References" },
   ].filter(Boolean) as { id: string; label: string }[];
 
+  const formatTag = (tag: string) =>
+    tag
+      .split(/[-_\s]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+
   return (
     <>
       <Navigation breadcrumbs={[
@@ -469,7 +476,7 @@ export default async function SectionPage({
                         key={index}
                         className="inline-block px-2 py-0.5 bg-violet-100 text-violet-800 text-xs font-medium rounded"
                       >
-                        {tagObj.tag}
+                        {formatTag(tagObj.tag)}
                       </span>
                     ))}
                   </div>

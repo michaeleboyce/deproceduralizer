@@ -1,14 +1,16 @@
 #!/bin/bash
-# Create a small-plus subset of DC Code XML files for testing
-# Copies first 100 sections from Titles 1-4 with full directory structure
-# Target: ~400 sections (4x small corpus size)
+# Create a ~1000-section subset of DC Code XML files for testing.
+# Copies the first 200 sections from Titles 1-5, preserving directory structure.
 
 set -e
 
 SOURCE_DIR="data/raw/dc-law-xml/us/dc/council/code/titles"
-DEST_DIR="data/subsets_small_plus"
+DEST_DIR="data/subsets_1000"
+SECTIONS_PER_TITLE=200
+START_TITLE=1
+END_TITLE=5
 
-echo "Creating SMALL-PLUS subset of DC Code XML files (Titles 1-4)..."
+echo "Creating ~1000-section subset of DC Code XML files (Titles ${START_TITLE}-${END_TITLE}, ${SECTIONS_PER_TITLE} sections each)..."
 
 # Check if source exists
 if [ ! -d "$SOURCE_DIR" ]; then
@@ -21,17 +23,15 @@ fi
 rm -rf "$DEST_DIR"
 mkdir -p "$DEST_DIR"
 
-echo "Copying first 100 sections from each of Titles 1-4 with directory structure..."
+echo "Copying sections..."
 
-# Copy first 100 sections from each title, preserving directory structure
-for i in {1..4}; do
+for i in $(seq $START_TITLE $END_TITLE); do
     TITLE_SOURCE="$SOURCE_DIR/$i"
     TITLE_DEST="$DEST_DIR/$i"
 
     if [ -d "$TITLE_SOURCE" ]; then
         echo "  Copying Title $i..."
 
-        # Create title directory
         mkdir -p "$TITLE_DEST"
 
         # Copy index.xml if it exists
@@ -39,13 +39,15 @@ for i in {1..4}; do
             cp "$TITLE_SOURCE/index.xml" "$TITLE_DEST/"
         fi
 
-        # Create sections directory
-        mkdir -p "$TITLE_DEST/sections"
-
-        # Copy first 100 section files
-        find "$TITLE_SOURCE/sections" -name "*.xml" -type f | sort | head -100 | while read file; do
-            cp "$file" "$TITLE_DEST/sections/"
-        done
+        # Copy first N section files
+        if [ -d "$TITLE_SOURCE/sections" ]; then
+            mkdir -p "$TITLE_DEST/sections"
+            find "$TITLE_SOURCE/sections" -name "*.xml" -type f | sort | head -"$SECTIONS_PER_TITLE" | while read file; do
+                cp "$file" "$TITLE_DEST/sections/"
+            done
+        else
+            echo "  Warning: No sections directory for Title $i at $TITLE_SOURCE"
+        fi
     else
         echo "  Warning: Title $i directory not found at $TITLE_SOURCE"
     fi
@@ -59,6 +61,5 @@ echo "✓ Copied $COUNT section XML files to $DEST_DIR"
 echo "✓ Also copied $INDEX_COUNT title index files for hierarchy information"
 echo ""
 echo "Next step: Run the pipeline with:"
-echo "  ./scripts/run-pipeline.sh --corpus=small_plus"
+echo "  ./scripts/run-pipeline.sh --corpus=1000"
 echo ""
-echo "Estimated runtime: ~30-45 minutes (2x small corpus)"

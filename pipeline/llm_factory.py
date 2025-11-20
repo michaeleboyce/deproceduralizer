@@ -28,7 +28,7 @@ load_dotenv()
 logger = setup_logging(__name__)
 
 
-def create_llm_client(strategy: str = None, parallel_execution: bool = False) -> Union['LLMClient', 'ErrorDrivenLLMClient']:
+def create_llm_client(strategy: str = None) -> Union['LLMClient', 'ErrorDrivenLLMClient']:
     """
     Create an LLM client with the specified cascade strategy.
 
@@ -37,7 +37,6 @@ def create_llm_client(strategy: str = None, parallel_execution: bool = False) ->
                  If None, uses LLM_CASCADE_STRATEGY env var or intelligent defaults:
                  - If PIPELINE_WORKERS > 1: defaults to "rate_limited" (better for parallel processing)
                  - Otherwise: defaults to "error_driven" (better for sequential processing)
-        parallel_execution: Enable parallel execution within tiers (only for rate_limited strategy)
 
     Returns:
         LLMClient or ErrorDrivenLLMClient instance
@@ -74,19 +73,23 @@ def create_llm_client(strategy: str = None, parallel_execution: bool = False) ->
         # Check if user wants extended or simple rate-limited cascade
         rate_limited_mode = os.getenv("LLM_CASCADE_MODE", "extended")
 
-        # Use parameter value or check env var
-        parallel = parallel_execution or (os.getenv("LLM_PARALLEL_EXECUTION", "false").lower() == "true")
-
-        logger.info(f"🔧 Creating Rate-Limited LLM Client (mode: {rate_limited_mode}, parallel: {parallel})")
-        return LLMClient(cascade_strategy=rate_limited_mode, parallel_execution=parallel)
+        logger.info("=" * 70)
+        logger.info(f"🔧 LLM CASCADE STRATEGY: RATE-LIMITED (Sequential)")
+        logger.info(f"   Mode: {rate_limited_mode.upper()}")
+        logger.info(f"   Models tried one at a time for better API stability")
+        logger.info(f"   Preemptive rate limit checking with 0.1s delays")
+        logger.info("=" * 70)
+        return LLMClient(cascade_strategy=rate_limited_mode)
 
     elif strategy == "error_driven":
         from llm_client_error_driven import ErrorDrivenLLMClient
 
-        if parallel_execution:
-            logger.warning("⚠️  Parallel execution not supported with error_driven strategy, ignoring parameter")
-
-        logger.info(f"🔧 Creating Error-Driven LLM Client")
+        logger.info("=" * 70)
+        logger.info(f"🔧 LLM CASCADE STRATEGY: ERROR-DRIVEN")
+        logger.info(f"   Try until error, no preemptive rate limiting")
+        logger.info(f"   FIFO retry queue, retry after 100 attempts")
+        logger.info(f"   Workers share failure state for fast cascade")
+        logger.info("=" * 70)
         return ErrorDrivenLLMClient()
 
     else:

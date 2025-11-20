@@ -279,6 +279,32 @@ load_anachronisms() {
     return 0
 }
 
+load_pahlka_implementation() {
+    local corpus=$1
+    local start_time=$(date +%s)
+
+    echo "Loading Pahlka implementation analysis..."
+
+    local suffix=$(get_output_suffix "$corpus")
+    local input_file="data/outputs/pahlka_implementation${suffix}.ndjson"
+
+    if [[ ! -f "$input_file" ]]; then
+        log_error "Input file not found: $input_file"
+        echo "Run pipeline step 8 first"
+        return 1
+    fi
+
+    PYTHONPATH=. python dbtools/load_pahlka_implementation.py \
+        --in "$input_file" || {
+        log_error "Failed to load Pahlka implementation analysis"
+        return 1
+    }
+
+    local duration=$(($(date +%s) - start_time))
+    log_success "Pahlka implementation analysis loaded [$(format_duration $duration)]"
+    return 0
+}
+
 #===============================================================================
 # LOADER DISPATCHER
 #===============================================================================
@@ -296,6 +322,7 @@ load_table() {
         reporting) load_reporting "$corpus" ;;
         classifications) load_classifications "$corpus" ;;
         anachronisms) load_anachronisms "$corpus" ;;
+        pahlka_implementation) load_pahlka_implementation "$corpus" ;;
         *)
             log_error "Invalid table name: $table"
             return 1
@@ -309,9 +336,9 @@ load_table() {
 
 load_all_tables() {
     local corpus=$1
-    local tables="sections structure refs obligations similarities reporting classifications anachronisms"
+    local tables="sections structure refs obligations similarities reporting classifications anachronisms pahlka_implementation"
 
-    local total=8
+    local total=9
     local current=0
     local failed=0
 

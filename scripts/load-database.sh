@@ -38,6 +38,7 @@ Available Tables:
   reporting              Reporting requirements
   classifications        Similarity relationship classifications
   anachronisms           Anachronistic language detection
+  pahlka_implementation  Implementation complexity analysis (Pahlka framework)
 
 Examples:
   # Load all tables for small corpus

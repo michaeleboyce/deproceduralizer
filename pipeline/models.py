@@ -495,6 +495,10 @@ class SimilarityClassification(BaseModel):
         ...,
         description="Type of relationship: duplicate, superseded, related, conflicting, unrelated",
     )
+    potential_anachronism: bool = Field(
+        default=False,
+        description="True if either section shows potential anachronistic language (obsolete tech, discriminatory terms, defunct constructs)"
+    )
     explanation: str = Field(
         ...,
         description="Brief explanation of classification",
@@ -555,6 +559,9 @@ class SimilarityClassification(BaseModel):
     @classmethod
     def validate_iso8601(cls, v: str) -> str:
         """Validate timestamp is valid ISO 8601 format."""
+        # Allow empty string (may be set by pipeline later)
+        if v == "":
+            return v
         try:
             datetime.fromisoformat(v.replace("Z", "+00:00"))
             return v
@@ -680,10 +687,171 @@ class AnachronismAnalysis(BaseModel):
     @classmethod
     def validate_iso8601(cls, v: str) -> str:
         """Validate timestamp is valid ISO 8601 format."""
+        # Allow empty string (may be set by pipeline later)
+        if v == "":
+            return v
         try:
             datetime.fromisoformat(v.replace("Z", "+00:00"))
             return v
         except ValueError:
             raise ValueError(f"analyzed_at must be ISO 8601 format, got: {v}")
+
+    model_config = {"str_strip_whitespace": True}
+
+
+# =============================================================================
+# PAHLKA IMPLEMENTATION ANALYSIS MODELS
+# =============================================================================
+
+class PahlkaImplementationIndicator(BaseModel):
+    """
+    Individual implementation issue indicator following Jennifer Pahlka's framework.
+
+    Identifies specific patterns that create implementation complexity, administrative
+    burden, or separation between policy and delivery.
+
+    Categories align with "Recoding America" principles:
+    - complexity_policy_debt: Cross-reference spaghetti, accreted conditions
+    - options_become_requirements: Suggestion lists become checklists
+    - policy_implementation_separation: Waterfall, vendor lock-in
+    - overwrought_legalese: Dense definitions that make forms impossible
+    - cascade_of_rigidity: Conflicting absolute goals
+    - mandated_steps_not_outcomes: Procedure-heavy vs outcome-focused
+    - administrative_burdens: Notaries, wet signatures, in-person requirements
+    - no_feedback_loops: One-shot design, no pilots or learning
+    - process_worship_oversight: Compliance-only audits
+    - zero_risk_language: Impossible absolutes ("ensure no X ever occurs")
+    - frozen_technology: Hard-coded architectures, formats, platforms
+    - implementation_opportunity: POSITIVE patterns (outcome focus, iteration)
+    """
+    category: Literal[
+        "complexity_policy_debt",
+        "options_become_requirements",
+        "policy_implementation_separation",
+        "overwrought_legalese",
+        "cascade_of_rigidity",
+        "mandated_steps_not_outcomes",
+        "administrative_burdens",
+        "no_feedback_loops",
+        "process_worship_oversight",
+        "zero_risk_language",
+        "frozen_technology",
+        "implementation_opportunity"
+    ]
+    complexity: Literal["HIGH", "MEDIUM", "LOW"]
+    matched_phrases: List[str] = Field(
+        min_length=1,
+        max_length=20,
+        description="Specific text from section that triggered this indicator"
+    )
+    implementation_approach: str = Field(
+        min_length=10,
+        max_length=1000,
+        description="Suggested approach for implementation or improvement"
+    )
+    effort_estimate: Optional[str] = Field(
+        default=None,
+        max_length=500,
+        description="Estimated implementation difficulty/timeline"
+    )
+    explanation: str = Field(
+        min_length=20,
+        max_length=1000,
+        description="Why this creates implementation burden or opportunity"
+    )
+
+    @field_validator('matched_phrases')
+    @classmethod
+    def validate_phrases_not_empty(cls, v):
+        """Ensure no empty phrases in list."""
+        if not v:
+            raise ValueError("matched_phrases must contain at least one phrase")
+        for phrase in v:
+            if not phrase or not phrase.strip():
+                raise ValueError("matched_phrases cannot contain empty strings")
+        return v
+
+    model_config = {"str_strip_whitespace": True}
+
+
+class PahlkaImplementationAnalysis(BaseModel):
+    """
+    Complete Pahlka implementation analysis for a DC Code section.
+
+    Analyzes implementation complexity and alignment with Jennifer Pahlka's
+    "recoding government" principles from "Recoding America".
+
+    Output of: pipeline/70_llm_pahlka_implementation.py
+    Consumed by: dbtools/load_pahlka_implementation.py
+    """
+
+    jurisdiction: str = Field(
+        default="dc",
+        description="Jurisdiction code",
+        max_length=10,
+    )
+    section_id: str = Field(
+        default="",
+        description="Section ID being analyzed (set by pipeline, not LLM)"
+    )
+    has_implementation_issues: bool = Field(
+        ...,
+        description="Whether section has implementation complexity or burdens"
+    )
+    overall_complexity: Optional[Literal["HIGH", "MEDIUM", "LOW"]] = Field(
+        default=None,
+        description="Overall implementation complexity level (null if no issues)"
+    )
+    indicators: List[PahlkaImplementationIndicator] = Field(
+        default_factory=list,
+        description="List of specific implementation issues found (empty if none)"
+    )
+    summary: str = Field(
+        default="",
+        min_length=0,
+        max_length=2000,
+        description="2-3 sentence summary of implementation concerns"
+    )
+    requires_technical_review: bool = Field(
+        default=False,
+        description="Whether section needs technical/architecture review"
+    )
+    model_used: str = Field(
+        default="",
+        description="Name of LLM model that performed the analysis (set by pipeline, not LLM)",
+        max_length=50,
+    )
+    analyzed_at: str = Field(
+        default="",
+        description="ISO 8601 timestamp of when analysis was performed (set by pipeline, not LLM)"
+    )
+
+    @field_validator("jurisdiction")
+    @classmethod
+    def lowercase_jurisdiction(cls, v: str) -> str:
+        """Ensure jurisdiction is lowercase."""
+        return v.lower()
+
+    @field_validator('analyzed_at')
+    @classmethod
+    def validate_iso8601(cls, v):
+        """Validate that analyzed_at is a valid ISO 8601 timestamp."""
+        # Allow empty string (default value when LLM doesn't provide it)
+        if v == "":
+            return v
+        try:
+            datetime.fromisoformat(v.replace('Z', '+00:00'))
+            return v
+        except ValueError:
+            raise ValueError(f"analyzed_at must be ISO 8601 format, got: {v}")
+
+    @field_validator('overall_complexity')
+    @classmethod
+    def validate_complexity_with_issues(cls, v, info):
+        """If has_implementation_issues is True, overall_complexity should be set."""
+        if 'has_implementation_issues' in info.data:
+            if info.data['has_implementation_issues'] and v is None:
+                raise ValueError("overall_complexity should be set when has_implementation_issues is True")
+        return v
 
     model_config = {"str_strip_whitespace": True}

@@ -11,13 +11,20 @@ Provides:
 import json
 import logging
 import os
+import pickle
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any, Dict, Iterator, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 from tqdm import tqdm
 
 # Pipeline version for tracking data lineage
 PIPELINE_VERSION = "0.1.0"
+
+# Log directory configuration
+LOG_DIR = Path(os.getenv("PIPELINE_LOG_DIR", "logs"))
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = LOG_DIR / os.getenv("PIPELINE_LOG_FILE", "pipeline.log")
 
 
 class StateManager:
@@ -162,19 +169,24 @@ class TqdmLoggingHandler(logging.Handler):
 
 
 def setup_logging(name: str, level: int = logging.INFO) -> logging.Logger:
-    """Set up logging with consistent format and tqdm support."""
+    """Set up logging with console (tqdm-safe) and file handlers."""
     logger = logging.getLogger(name)
     logger.setLevel(level)
     
     # Check if handler already exists to avoid duplicates
     if not logger.handlers:
-        handler = TqdmLoggingHandler()
         formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            "%(asctime)s - %(name)s - [%(threadName)s] - %(levelname)s - %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S"
         )
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
+
+        console_handler = TqdmLoggingHandler()
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+
+        file_handler = RotatingFileHandler(LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=5)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
         
         # Prevent propagation to root logger which might have default handlers
         logger.propagate = False
@@ -195,6 +207,71 @@ def validate_record(record: Dict[str, Any], required_fields: list[str]) -> bool:
             logging.error(f"Missing required field '{field}' in record: {record.get('id', 'unknown')}")
             return False
     return True
+
+
+# Deduplication utilities
+
+def load_dedup_map() -> Dict[str, str]:
+    """
+    Load section deduplication map from preprocessor output.
+
+    Returns:
+        Dict mapping section_id -> canonical_section_id for duplicates.
+        Empty dict if no dedup map exists.
+    """
+    dedup_file = Path("data/interim/section_deduplication_map.pkl")
+    if not dedup_file.exists():
+        logging.info("No deduplication map found, proceeding without deduplication")
+        return {}
+
+    with open(dedup_file, "rb") as f:
+        dedup_map = pickle.load(f)
+
+    logging.info(f"Loaded deduplication map with {len(dedup_map)} duplicate mappings")
+    return dedup_map
+
+
+def get_canonical_id(section_id: str, dedup_map: Dict[str, str]) -> str:
+    """
+    Get canonical section ID for a given section, using dedup map if available.
+
+    Args:
+        section_id: Original section ID
+        dedup_map: Deduplication mapping dict
+
+    Returns:
+        Canonical section ID (or original if not a duplicate)
+    """
+    return dedup_map.get(section_id, section_id)
+
+
+# NDJSON convenience functions
+
+def load_sections_ndjson(file_path: str) -> List[Dict[str, Any]]:
+    """Load all sections from an NDJSON file into memory."""
+    sections = []
+    with open(file_path, "r") as f:
+        for line in f:
+            if line.strip():
+                sections.append(json.loads(line))
+    return sections
+
+
+def save_json(data: Any, file_path: str) -> None:
+    """Save data to a JSON file with pretty formatting."""
+    path = Path(file_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def log_stage_header(stage_number: str, stage_name: str) -> None:
+    """Print a formatted header for a pipeline stage."""
+    header = f"STAGE {stage_number}: {stage_name}"
+    separator = "=" * len(header)
+    print("\n" + separator)
+    print(header)
+    print(separator + "\n")
 
 
 # Example usage:

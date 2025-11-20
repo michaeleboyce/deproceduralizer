@@ -16,13 +16,14 @@ show_help() {
     cat << EOF
 DC Code Pipeline Runner
 
-Usage: $0 --corpus={small|small_plus|medium|large} [OPTIONS]
+Usage: $0 --corpus={small|small_plus|medium|1000|large} [OPTIONS]
 
 Required Arguments:
   --corpus=CORPUS        Corpus size to process
                          small      - Titles 1-2 (~100 sections, ~20-30 min)
                          small_plus - Titles 1-4 (~200 sections, ~30-45 min)
                          medium     - Titles 1-7 (~600 sections, ~5-6 hours)
+                         1000       - Titles 1-5 (first 200 sections each, ~1000 sections)
                          large      - All DC Code (~50 titles, ~days)
 
 Optional Arguments:
@@ -45,6 +46,7 @@ Pipeline Steps:
   5. Detect reporting requirements (LLM)
   6. Classify similarity relationships (LLM)
   7. Detect anachronisms (LLM)
+  8. Pahlka implementation analysis (LLM)
 
 Examples:
   # Run full pipeline on small corpus
@@ -180,7 +182,7 @@ parse_steps() {
     local steps=$1
 
     if [[ "$steps" == "all" ]]; then
-        echo "1 2 3 4 5 6 7"
+        echo "1 2 3 4 5 6 7 8"
         return
     fi
 

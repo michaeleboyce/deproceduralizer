@@ -18,6 +18,7 @@ import argparse
 import os
 import pickle
 import re
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import List
@@ -26,7 +27,15 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 
-from common import NDJSONReader, NDJSONWriter, setup_logging, validate_record, PIPELINE_VERSION
+from common import (
+    NDJSONReader,
+    NDJSONWriter,
+    setup_logging,
+    validate_record,
+    PIPELINE_VERSION,
+    load_dedup_map,
+    get_canonical_id,
+)
 from llm_factory import create_llm_client, add_cascade_argument
 from models import Obligation, ObligationsList
 
@@ -36,6 +45,7 @@ logger = setup_logging(__name__)
 WORKERS = int(os.getenv("PIPELINE_WORKERS", "1"))
 
 CHECKPOINT_FILE = Path("data/interim/obligations_enhanced.ckpt")
+CACHE_FILE = Path("data/interim/obligations_enhanced_cache.pkl")
 MAX_TEXT_LENGTH = 2000  # Truncate text for LLM
 
 # Regex patterns for Stage 1 filtering
@@ -52,6 +62,29 @@ OBLIGATION_PATTERNS = [
 ]
 
 COMBINED_PATTERN = re.compile('|'.join(OBLIGATION_PATTERNS), re.IGNORECASE)
+
+
+def load_cache() -> dict:
+    if CACHE_FILE.exists():
+        try:
+            with open(CACHE_FILE, "rb") as f:
+                cache = pickle.load(f)
+            logger.info(f"📦 Loaded obligations cache with {len(cache)} entries")
+            return cache
+        except Exception as e:
+            logger.warning(f"Failed to load obligations cache: {e}; starting fresh")
+    return {}
+
+
+def save_cache(cache: dict):
+    CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(CACHE_FILE, "wb") as f:
+        pickle.dump(cache, f)
+    logger.debug(f"Saved obligations cache with {len(cache)} entries")
+
+
+def make_text_hash(text: str) -> str:
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()
 
 
 def has_obligation_keywords(text: str) -> bool:
@@ -118,7 +151,7 @@ Set **potential_anachronism** to true if ANY of these indicators are present, fa
 IMPORTANT:
 - Phrase should be the exact wording from the text (5-100 characters)
 - For dollar amounts, value should be in dollars (not cents)
-- jurisdiction and section_id will be added automatically - don't include them
+- MUST include jurisdiction: "dc" and section_id: "{section_id}" in EVERY obligation (see example below)
 - If no obligations found, return empty obligations array
 
 Response format:
@@ -200,10 +233,30 @@ def process_section(section: dict, client) -> tuple[List[dict], bool]:
     Returns:
         (list of obligation records, anachronism flag)
     """
+    global OBLIG_CACHE, DEDUP_MAP
     section_id = section["id"]
+    text = section["text"]
+    truncated_text = text[:MAX_TEXT_LENGTH]
+    text_hash = make_text_hash(truncated_text)
 
-    # Classify with LLM
-    obligations, potential_anachronism = classify_obligation(section["text"], section_id, client)
+    # Use canonical ID for cache lookup (deduplication)
+    canonical_id = get_canonical_id(section_id, DEDUP_MAP)
+
+    # Cache check using canonical ID
+    cached = OBLIG_CACHE.get(canonical_id)
+    if cached and cached.get("hash") == text_hash:
+        # Reuse cached result but apply to current section_id
+        cached_records = cached.get("records", [])
+        # Clone records and update section_id
+        records = []
+        for rec in cached_records:
+            rec_copy = rec.copy()
+            rec_copy["section_id"] = section_id  # Map back to original ID
+            records.append(rec_copy)
+        return records, cached.get("potential_anachronism", False)
+
+    # Classify with LLM (using original section_id for prompt context)
+    obligations, potential_anachronism = classify_obligation(truncated_text, section_id, client)
 
     if not obligations:
         return [], False
@@ -231,6 +284,10 @@ def process_section(section: dict, client) -> tuple[List[dict], bool]:
     return records, potential_anachronism
 
 
+# The original process_section function is removed as it's integrated into the main loop
+# or the new inner process_section for concurrent execution.
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Extract and classify obligations using two-stage LLM approach"
@@ -247,6 +304,11 @@ def main():
         help="Output NDJSON file (enhanced obligations)"
     )
     parser.add_argument(
+        "--use-llm",
+        action="store_true",
+        help="Enable LLM-based obligation extraction (default: disabled, use regex-only pipeline instead)"
+    )
+    parser.add_argument(
         "--filter-threshold",
         type=float,
         default=1.0,
@@ -258,15 +320,25 @@ def main():
         help="Limit number of sections to process (for testing)"
     )
     parser.add_argument(
-        "--parallel",
-        action="store_true",
-        help="Enable parallel execution of models within tiers (faster but uses more API quota)"
+        "--workers",
+        type=int,
+        default=1,
+        help="Number of concurrent workers for processing sections (default: 1)"
     )
 
     # Add cascade strategy argument
     add_cascade_argument(parser)
 
     args = parser.parse_args()
+
+    # Check if LLM is enabled via flag or environment variable
+    use_llm = args.use_llm or os.getenv("USE_LLM_OBLIGATIONS", "false").lower() == "true"
+
+    if not use_llm:
+        logger.warning("⚠️  LLM obligations extraction is DISABLED")
+        logger.warning("    Use --use-llm flag or set USE_LLM_OBLIGATIONS=true to enable")
+        logger.warning("    For faster, free obligation extraction, use pipeline/30_regex_obligations.py instead")
+        return 1
 
     input_file = Path(args.input_file)
     output_file = Path(args.out)
@@ -277,16 +349,16 @@ def main():
 
     logger.info(f"🔍 Extracting enhanced obligations from {input_file}")
     logger.info(f"📊 Pipeline version: {PIPELINE_VERSION}")
-    logger.info(f"🤖 Using unified LLM client with Instructor validation")
-    if args.parallel:
-        logger.info(f"⚡ Parallel execution enabled")
+    logger.info(f"🤖 Using unified LLM client with Instructor validation (sequential execution)")
 
-    # Load checkpoint
+    # Load checkpoint and cache
     checkpoint = load_checkpoint()
+    global OBLIG_CACHE, DEDUP_MAP
+    OBLIG_CACHE = load_cache()
+    DEDUP_MAP = load_dedup_map()
 
     # Initialize LLM client using factory
-    # Note: parallel_execution is only supported with rate_limited strategy
-    client = create_llm_client(strategy=args.cascade_strategy, parallel_execution=args.parallel)
+    client = create_llm_client(strategy=args.cascade_strategy)
 
     # Statistics
     sections_processed = 0
@@ -344,7 +416,8 @@ def main():
             # Serial execution (original behavior)
             for section in tqdm(candidates, desc="Classifying", unit="section"):
                 section_id = section["id"]
-                records, _ = process_section(section, client)
+                records, potential_anachronism = process_section(section, client)
+                text_hash = make_text_hash(section["text"][:MAX_TEXT_LENGTH])
 
                 if not records:
                     # No obligations found, but mark as processed
@@ -364,11 +437,19 @@ def main():
                     checkpoint["processed_ids"].add(section_id)
                     checkpoint["classified_count"] = checkpoint.get("classified_count", 0) + 1
                 sections_processed += 1
+                # Update cache entry using canonical ID (for deduplication)
+                canonical_id = get_canonical_id(section_id, DEDUP_MAP)
+                OBLIG_CACHE[canonical_id] = {
+                    "hash": text_hash,
+                    "records": records,
+                    "potential_anachronism": potential_anachronism,
+                }
 
                 # Save checkpoint every 5 sections
                 if sections_processed % 5 == 0:
                     with checkpoint_lock:
                         save_checkpoint(checkpoint)
+                        save_cache(OBLIG_CACHE)
         else:
             # Parallel execution with ThreadPoolExecutor
             with ThreadPoolExecutor(max_workers=WORKERS) as executor:
@@ -384,7 +465,7 @@ def main():
                     section_id = section["id"]
 
                     try:
-                        records, _ = future.result()
+                        records, potential_anachronism = future.result()
 
                         if not records:
                             # No obligations found, but mark as processed
@@ -400,16 +481,24 @@ def main():
                                 obligations_found += 1
                                 category_counts[record["category"]] += 1
 
-                        # Update checkpoint
+                        # Update checkpoint and cache
                         with checkpoint_lock:
                             checkpoint["processed_ids"].add(section_id)
                             checkpoint["classified_count"] = checkpoint.get("classified_count", 0) + 1
+                            # Use canonical ID for cache (deduplication)
+                            canonical_id = get_canonical_id(section_id, DEDUP_MAP)
+                            OBLIG_CACHE[canonical_id] = {
+                                "hash": make_text_hash(section["text"][:MAX_TEXT_LENGTH]),
+                                "records": records,
+                                "potential_anachronism": potential_anachronism,
+                            }
                         sections_processed += 1
 
                         # Save checkpoint every 5 sections
                         if sections_processed % 5 == 0:
                             with checkpoint_lock:
                                 save_checkpoint(checkpoint)
+                                save_cache(OBLIG_CACHE)
 
                     except Exception as e:
                         logger.error(f"Error processing {section_id}: {e}")
@@ -419,6 +508,7 @@ def main():
 
     # Final checkpoint save
     save_checkpoint(checkpoint)
+    save_cache(OBLIG_CACHE)
 
     # Summary
     logger.info(f"\n✨ Extraction complete!")

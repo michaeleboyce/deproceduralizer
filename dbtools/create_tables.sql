@@ -248,6 +248,7 @@ CREATE TABLE IF NOT EXISTS section_similarity_classifications (
   cross_encoder_label text CHECK (cross_encoder_label IN ('entailment', 'contradiction', 'neutral') OR cross_encoder_label IS NULL),
   cross_encoder_score real CHECK (cross_encoder_score >= 0.0 OR cross_encoder_score IS NULL),  -- Allows unnormalized logits (can be > 1.0)
 
+  potential_anachronism boolean DEFAULT false,
   created_at     timestamp with time zone DEFAULT now(),
   PRIMARY KEY (jurisdiction, section_a, section_b),
   CHECK (section_a < section_b),

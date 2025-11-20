@@ -17,6 +17,7 @@ Usage:
 import argparse
 import os
 import pickle
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from tqdm import tqdm
@@ -24,7 +25,15 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 
-from common import NDJSONReader, NDJSONWriter, setup_logging, validate_record, PIPELINE_VERSION
+from common import (
+    NDJSONReader,
+    NDJSONWriter,
+    setup_logging,
+    validate_record,
+    PIPELINE_VERSION,
+    load_dedup_map,
+    get_canonical_id,
+)
 from llm_factory import create_llm_client, add_cascade_argument
 from models import ReportingRequirement
 
@@ -34,10 +43,30 @@ logger = setup_logging(__name__)
 WORKERS = int(os.getenv("PIPELINE_WORKERS", "1"))
 
 CHECKPOINT_FILE = Path("data/interim/reporting.ckpt")
+CACHE_FILE = Path("data/interim/reporting_cache.pkl")
 MAX_TEXT_LENGTH = 3000  # Truncate text to avoid token limits
 
 
-def get_llm_analysis(text: str, section_id: str, client) -> tuple[ReportingRequirement, str]:
+def load_cache() -> dict:
+    if CACHE_FILE.exists():
+        try:
+            with open(CACHE_FILE, "rb") as f:
+                cache = pickle.load(f)
+            logger.info(f"📦 Loaded reporting cache with {len(cache)} entries")
+            return cache
+        except Exception as e:
+            logger.warning(f"Failed to load reporting cache: {e}; starting fresh")
+    return {}
+
+
+def save_cache(cache: dict):
+    CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(CACHE_FILE, "wb") as f:
+        pickle.dump(cache, f)
+    logger.debug(f"Saved reporting cache with {len(cache)} entries")
+
+
+def get_llm_analysis(text: str, section_id: str, client, pre_truncated: bool = False) -> tuple[ReportingRequirement, str]:
     """
     Analyze section using unified LLM client with structured outputs.
 
@@ -50,8 +79,8 @@ def get_llm_analysis(text: str, section_id: str, client) -> tuple[ReportingRequi
         (ReportingRequirement instance, model_used) or (None, "failed")
     """
     # Truncate text if too long
-    truncated_text = text[:MAX_TEXT_LENGTH]
-    if len(text) > MAX_TEXT_LENGTH:
+    truncated_text = text if pre_truncated else text[:MAX_TEXT_LENGTH]
+    if not pre_truncated and len(text) > MAX_TEXT_LENGTH:
         logger.debug(f"Truncated {section_id} from {len(text)} to {MAX_TEXT_LENGTH} chars")
 
     # Construct prompt
@@ -59,7 +88,7 @@ def get_llm_analysis(text: str, section_id: str, client) -> tuple[ReportingRequi
 
 TASK: Determine if this section requires an entity to compile and submit regular reports, data, statistics, or documentation to an oversight body.
 
-IMPORTANT: Only flag as has_reporting=true when you are CERTAIN the text describes a substantive reporting requirement. When uncertain or ambiguous, default to has_reporting=false. Be conservative in your assessment.
+IMPORTANT: Only flag as has_reporting=true when you are CERTAIN the text describes a substantive reporting requirement. When uncertain or ambiguous, default to has_reporting=false. Be conservative in your assessment for reporting, but still perform a thorough anachronism check.
 
 WHAT COUNTS AS REPORTING (set has_reporting=true):
 - Regular/periodic reports (annual, quarterly, monthly reports)
@@ -94,10 +123,11 @@ Also determine if this section contains any ANACHRONISTIC language that suggests
 - Historical discriminatory language (Jim Crow era terms)
 - Defunct agencies or institutions
 - Archaic measurements or units
-- Gendered professional titles (policeman, chairman, etc.)
-- Very old dollar amounts suggesting no inflation updates (e.g., "$5 fine")
+ - Explicitly gendered professional titles (fireman, policeman, mailman, chairman, stewardess, milkman)
+ - Very old dollar amounts suggesting no inflation updates (e.g., "$5 fine")
 
 Set **potential_anachronism** to true if ANY of these indicators are present, false otherwise.
+When in doubt about anachronism, err on the side of true if a clear keyword match appears (e.g., telegram, typewriter, fireman, colored, trolley, gold coin, poll tax, sabbath laws).
 """
 
     response = client.generate(
@@ -138,6 +168,49 @@ def load_checkpoint() -> dict:
     }
 
 
+def make_text_hash(text: str) -> str:
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()
+
+
+def maybe_get_cached(section_id: str, text_hash: str, cache: dict, dedup_map: dict = None) -> tuple:
+    """
+    Return cached (record_dict, model_used) if present and hash matches.
+    Uses canonical ID for cache lookup if dedup_map is provided.
+    """
+    if dedup_map is None:
+        dedup_map = {}
+
+    canonical_id = get_canonical_id(section_id, dedup_map)
+    cached = cache.get(canonical_id)
+    if not cached:
+        return None, None
+    cached_hash = cached.get("hash")
+    if cached_hash != text_hash:
+        return None, None
+
+    # If we got a cached result from a different section (duplicate),
+    # clone it and update the ID
+    cached_record = cached.get("record")
+    if cached_record and canonical_id != section_id:
+        # Clone and update ID to original section
+        record_copy = cached_record.copy()
+        record_copy["id"] = section_id
+        return record_copy, cached.get("model_used")
+
+    return cached_record, cached.get("model_used")
+
+
+def set_cache_entry(section_id: str, text_hash: str, record: dict, model_used: str, cache: dict, dedup_map: dict = None):
+    """
+    Store cache entry using canonical ID if dedup_map is provided.
+    """
+    if dedup_map is None:
+        dedup_map = {}
+
+    canonical_id = get_canonical_id(section_id, dedup_map)
+    cache[canonical_id] = {"hash": text_hash, "record": record, "model_used": model_used}
+
+
 def save_checkpoint(checkpoint: dict):
     """Save checkpoint."""
     CHECKPOINT_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -157,10 +230,19 @@ def process_section(section: dict, client) -> tuple[dict | None, str, list]:
     Returns:
         (record_dict or None, model_used, tags_list)
     """
+    global DEDUP_MAP
     section_id = section["id"]
+    text = section["text"]
+    truncated_text = text[:MAX_TEXT_LENGTH]
+    text_hash = make_text_hash(truncated_text)
+
+    # Try cache first (using dedup map for canonical lookup)
+    cached = maybe_get_cached(section_id, text_hash, REPORTING_CACHE, DEDUP_MAP)
+    if cached and cached[0] is not None:
+        return cached[0], cached[1], cached[0].get("tags", [])
 
     # Analyze with LLM using structured outputs
-    analysis, model_used = get_llm_analysis(section["text"], section_id, client)
+    analysis, model_used = get_llm_analysis(truncated_text, section_id, client, pre_truncated=True)
 
     if analysis is None:
         return None, "failed", []
@@ -185,6 +267,10 @@ def process_section(section: dict, client) -> tuple[dict | None, str, list]:
 
     # Return record, model used, and tags
     tags = record["tags"] if record["has_reporting"] else []
+
+    # Update cache (using dedup map for canonical storage)
+    set_cache_entry(section_id, text_hash, record, model_used, REPORTING_CACHE, DEDUP_MAP)
+
     return record, model_used, tags
 
 
@@ -249,8 +335,11 @@ def main():
     logger.info(f"📊 Detecting reporting requirements in {input_file}")
     logger.info(f"📊 Pipeline version: {PIPELINE_VERSION}")
 
-    # Load checkpoint
+    # Load checkpoint and cache
     checkpoint = load_checkpoint()
+    global REPORTING_CACHE, DEDUP_MAP
+    REPORTING_CACHE = load_cache()
+    DEDUP_MAP = load_dedup_map()
 
     # Initialize LLM client using factory (supports both rate_limited and error_driven strategies)
     client = create_llm_client(strategy=args.cascade_strategy)
@@ -401,6 +490,7 @@ def main():
 
     # Final checkpoint save
     save_checkpoint(checkpoint)
+    save_cache(REPORTING_CACHE)
 
     # Calculate statistics
     reporting_percentage = (sections_with_reporting / sections_processed * 100) if sections_processed > 0 else 0
