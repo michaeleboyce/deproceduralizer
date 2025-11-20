@@ -301,6 +301,23 @@ export const sectionPahlkaHighlights = pgTable("section_pahlka_highlights", {
   indicatorIdx: index("idx_pahlka_highlights_indicator").on(table.indicatorId),
 }));
 
+/**
+ * Shared bookmarks for sections, conflicts, and analysis items
+ */
+export const bookmarks = pgTable("bookmarks", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  jurisdiction: varchar("jurisdiction", { length: 10 }).notNull().default("dc"),
+  itemType: text("item_type").notNull(),
+  itemId: text("item_id").notNull(),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  jurisdictionIdx: index("idx_bookmarks_jurisdiction").on(table.jurisdiction),
+  itemTypeIdx: index("idx_bookmarks_item_type").on(table.itemType),
+  createdAtIdx: index("idx_bookmarks_created_at").on(table.createdAt),
+}));
+
 // Type exports for use in application code
 export type Jurisdiction = typeof jurisdictions.$inferSelect;
 export type NewJurisdiction = typeof jurisdictions.$inferInsert;
@@ -323,3 +340,5 @@ export type SectionAnachronismHighlight = typeof sectionAnachronismHighlights.$i
 export type SectionPahlkaImplementation = typeof sectionPahlkaImplementations.$inferSelect;
 export type PahlkaImplementationIndicator = typeof pahlkaImplementationIndicators.$inferSelect;
 export type SectionPahlkaHighlight = typeof sectionPahlkaHighlights.$inferSelect;
+export type Bookmark = typeof bookmarks.$inferSelect;
+export type NewBookmark = typeof bookmarks.$inferInsert;

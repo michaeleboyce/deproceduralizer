@@ -259,26 +259,26 @@ function PahlkaImplementationsPageContent() {
   const getComplexityColor = (complexity: string): string => {
     switch (complexity) {
       case "HIGH":
-        return "text-red-600 dark:text-red-400";
+        return "text-red-600";
       case "MEDIUM":
-        return "text-yellow-600 dark:text-yellow-400";
+        return "text-yellow-600";
       case "LOW":
-        return "text-blue-600 dark:text-blue-400";
+        return "text-blue-600";
       default:
-        return "text-gray-600 dark:text-gray-400";
+        return "text-gray-600";
     }
   };
 
   const getComplexityBgColor = (complexity: string): string => {
     switch (complexity) {
       case "HIGH":
-        return "bg-red-100 dark:bg-red-900/20 text-red-800 dark:text-red-200";
+        return "bg-red-100 text-red-800";
       case "MEDIUM":
-        return "bg-yellow-100 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200";
+        return "bg-yellow-100 text-yellow-800";
       case "LOW":
-        return "bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200";
+        return "bg-blue-100 text-blue-800";
       default:
-        return "bg-gray-100 dark:bg-gray-900/20 text-gray-800 dark:text-gray-200";
+        return "bg-gray-100 text-gray-800";
     }
   };
 
@@ -298,15 +298,15 @@ function PahlkaImplementationsPageContent() {
     appliedSearchQuery;
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen bg-gray-50">
       <Navigation />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
             Pahlka Implementation Analysis
           </h1>
-          <p className="text-gray-600 dark:text-gray-400">
+          <p className="text-gray-600">
             Sections analyzed for implementation complexity using Jennifer Pahlka's "Recoding America" framework
           </p>
         </div>
@@ -314,39 +314,39 @@ function PahlkaImplementationsPageContent() {
         {/* Stats Dashboard */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           {/* Total sections */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-            <div className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="text-sm font-medium text-gray-600 mb-1">
               Total Sections
             </div>
-            <div className="text-3xl font-bold text-gray-900 dark:text-white">
+            <div className="text-3xl font-bold text-gray-900">
               {total.toLocaleString()}
             </div>
           </div>
 
           {/* Complexity distribution */}
           {complexityDistribution.map((dist) => (
-            <div key={dist.complexity} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-              <div className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+            <div key={dist.complexity} className="bg-white rounded-lg shadow p-6">
+              <div className="text-sm font-medium text-gray-600 mb-1">
                 {dist.complexity} Complexity
               </div>
               <div className={`text-3xl font-bold ${getComplexityColor(dist.complexity)}`}>
                 {dist.count.toLocaleString()}
               </div>
-              <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+              <div className="text-xs text-gray-500 mt-1">
                 {total > 0 ? `${Math.round((dist.count / total) * 100)}%` : "0%"}
               </div>
             </div>
           ))}
 
           {/* Technical review */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-            <div className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="text-sm font-medium text-gray-600 mb-1">
               Needs Technical Review
             </div>
-            <div className="text-3xl font-bold text-violet-600 dark:text-violet-400">
+            <div className="text-3xl font-bold text-violet-600">
               {technicalReviewStats.requires_review.toLocaleString()}
             </div>
-            <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+            <div className="text-xs text-gray-500 mt-1">
               {technicalReviewStats.total > 0
                 ? `${Math.round((technicalReviewStats.requires_review / technicalReviewStats.total) * 100)}%`
                 : "0%"}
@@ -355,19 +355,19 @@ function PahlkaImplementationsPageContent() {
         </div>
 
         {/* Filters */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-8">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Filters</h2>
+        <div className="bg-white rounded-lg shadow p-6 mb-8">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Filters</h2>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             {/* Complexity filter */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Complexity
               </label>
               <select
                 value={selectedComplexity}
                 onChange={(e) => setSelectedComplexity(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">All Complexities</option>
                 <option value="HIGH">HIGH</option>
@@ -378,13 +378,13 @@ function PahlkaImplementationsPageContent() {
 
             {/* Category filter */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Category
               </label>
               <select
                 value={selectedCategory}
                 onChange={(e) => setSelectedCategory(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">All Categories</option>
                 {allCategories.map((cat) => (
@@ -397,13 +397,13 @@ function PahlkaImplementationsPageContent() {
 
             {/* Title filter */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Title
               </label>
               <select
                 value={selectedTitle}
                 onChange={(e) => setSelectedTitle(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">All Titles</option>
                 {availableTitles.map((title) => (
@@ -416,14 +416,14 @@ function PahlkaImplementationsPageContent() {
 
             {/* Chapter filter */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Chapter
               </label>
               <select
                 value={selectedChapter}
                 onChange={(e) => setSelectedChapter(e.target.value)}
                 disabled={!selectedTitle}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <option value="">All Chapters</option>
                 {availableChapters.map((chapter) => (
@@ -436,16 +436,16 @@ function PahlkaImplementationsPageContent() {
 
             {/* Sort by */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Sort By
-                <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
+                <span className="ml-2 text-xs text-gray-500">
                   (Currently: {appliedSortBy === 'complexity' ? 'Complexity ↓' : appliedSortBy === 'citation' ? 'Citation ↑' : 'Heading ↑'})
                 </span>
               </label>
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="complexity">Complexity (High → Low)</option>
                 <option value="citation">Citation (A → Z)</option>
@@ -457,7 +457,7 @@ function PahlkaImplementationsPageContent() {
           {/* Search and checkboxes */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Search
               </label>
               <input
@@ -465,7 +465,7 @@ function PahlkaImplementationsPageContent() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search in summary or heading..."
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
 
@@ -477,7 +477,7 @@ function PahlkaImplementationsPageContent() {
                   onChange={(e) => setRequiresTechnicalReview(e.target.checked)}
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
-                <span className="text-sm text-gray-700 dark:text-gray-300">
+                <span className="text-sm text-gray-700">
                   Requires Technical Review
                 </span>
               </label>
@@ -495,7 +495,7 @@ function PahlkaImplementationsPageContent() {
             {hasActiveFilters && (
               <button
                 onClick={clearFilters}
-                className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
               >
                 Clear Filters
               </button>
@@ -504,35 +504,35 @@ function PahlkaImplementationsPageContent() {
         </div>
 
         {/* Results */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
-          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+        <div className="bg-white rounded-lg shadow">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-900">
               Results ({total.toLocaleString()} sections)
             </h2>
           </div>
 
           {loading && (
-            <div className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
+            <div className="px-6 py-12 text-center text-gray-500">
               Loading implementation analysis...
             </div>
           )}
 
           {error && (
-            <div className="px-6 py-12 text-center text-red-600 dark:text-red-400">
+            <div className="px-6 py-12 text-center text-red-600">
               Error: {error}
             </div>
           )}
 
           {!loading && !error && results.length === 0 && (
-            <div className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
+            <div className="px-6 py-12 text-center text-gray-500">
               No implementation issues found matching your filters.
             </div>
           )}
 
           {!loading && !error && results.length > 0 && (
-            <div className="divide-y divide-gray-200 dark:divide-gray-700">
+            <div className="divide-y divide-gray-200">
               {results.map((section) => (
-                <div key={section.id} className="px-6 py-6 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                <div key={section.id} className="px-6 py-6 hover:bg-gray-50:bg-gray-700/50">
                   {/* Section header */}
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">
@@ -542,8 +542,8 @@ function PahlkaImplementationsPageContent() {
                       >
                         {section.citation}
                       </CitationLink>
-                      <p className="text-gray-700 dark:text-gray-300 mt-1">{section.heading}</p>
-                      <div className="flex gap-2 mt-2 text-sm text-gray-500 dark:text-gray-400">
+                      <p className="text-gray-700 mt-1">{section.heading}</p>
+                      <div className="flex gap-2 mt-2 text-sm text-gray-500">
                         <span>{section.title_label}</span>
                         {section.chapter_label && (
                           <>
@@ -562,7 +562,7 @@ function PahlkaImplementationsPageContent() {
                         {section.overall_complexity}
                       </span>
                       {section.requires_technical_review && (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-violet-100 dark:bg-violet-900/20 text-violet-800 dark:text-violet-200">
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-violet-100 text-violet-800">
                           Tech Review
                         </span>
                       )}
@@ -571,7 +571,7 @@ function PahlkaImplementationsPageContent() {
 
                   {/* Summary */}
                   {section.summary && (
-                    <div className="mb-4 text-gray-700 dark:text-gray-300 text-sm bg-gray-50 dark:bg-gray-700/50 p-3 rounded">
+                    <div className="mb-4 text-gray-700 text-sm bg-gray-50 p-3 rounded">
                       {section.summary}
                     </div>
                   )}
@@ -582,11 +582,11 @@ function PahlkaImplementationsPageContent() {
                       {section.indicators.map((indicator) => (
                         <div
                           key={indicator.id}
-                          className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 bg-white dark:bg-gray-800"
+                          className="border border-gray-200 rounded-lg p-4 bg-white"
                         >
                           <div className="flex items-start justify-between mb-2">
                             <div className="flex-1">
-                              <span className="text-sm font-medium text-gray-900 dark:text-white">
+                              <span className="text-sm font-medium text-gray-900">
                                 {formatCategoryName(indicator.category)}
                               </span>
                             </div>
@@ -600,13 +600,13 @@ function PahlkaImplementationsPageContent() {
                           </div>
 
                           <div className="mb-3">
-                            <p className={`text-sm text-gray-700 dark:text-gray-300 ${!expandedExplanations.has(indicator.id) && indicator.explanation.length > 200 ? 'line-clamp-3' : ''}`}>
+                            <p className={`text-sm text-gray-700 ${!expandedExplanations.has(indicator.id) && indicator.explanation.length > 200 ? 'line-clamp-3' : ''}`}>
                               {indicator.explanation}
                             </p>
                             {indicator.explanation.length > 200 && (
                               <button
                                 onClick={() => toggleExplanation(indicator.id)}
-                                className="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1"
+                                className="text-xs text-blue-600 hover:underline mt-1"
                               >
                                 {expandedExplanations.has(indicator.id) ? 'Show Less' : 'Show More'}
                               </button>
@@ -615,17 +615,17 @@ function PahlkaImplementationsPageContent() {
 
                           {indicator.implementationApproach && (
                             <div className="mb-3">
-                              <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                              <div className="text-xs font-medium text-gray-500 mb-1">
                                 Implementation Approach:
                               </div>
-                              <div className="bg-blue-50 dark:bg-blue-900/20 p-2 rounded">
-                                <p className={`text-sm text-gray-700 dark:text-gray-300 ${!expandedApproaches.has(indicator.id) && indicator.implementationApproach.length > 150 ? 'line-clamp-2' : ''}`}>
+                              <div className="bg-blue-50 p-2 rounded">
+                                <p className={`text-sm text-gray-700 ${!expandedApproaches.has(indicator.id) && indicator.implementationApproach.length > 150 ? 'line-clamp-2' : ''}`}>
                                   {indicator.implementationApproach}
                                 </p>
                                 {indicator.implementationApproach.length > 150 && (
                                   <button
                                     onClick={() => toggleApproach(indicator.id)}
-                                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1"
+                                    className="text-xs text-blue-600 hover:underline mt-1"
                                   >
                                     {expandedApproaches.has(indicator.id) ? 'Show Less' : 'Show More'}
                                   </button>
@@ -636,10 +636,10 @@ function PahlkaImplementationsPageContent() {
 
                           {indicator.effortEstimate && (
                             <div className="mb-3">
-                              <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                              <div className="text-xs font-medium text-gray-500 mb-1">
                                 Effort Estimate:
                               </div>
-                              <div className="text-sm text-gray-600 dark:text-gray-400">
+                              <div className="text-sm text-gray-600">
                                 {indicator.effortEstimate}
                               </div>
                             </div>
@@ -647,14 +647,14 @@ function PahlkaImplementationsPageContent() {
 
                           {indicator.matchedPhrases && indicator.matchedPhrases.length > 0 && (
                             <div>
-                              <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
+                              <div className="text-xs font-medium text-gray-500 mb-2">
                                 Matched Phrases {indicator.matchedPhrases.length > 5 && `(${indicator.matchedPhrases.length} total)`}:
                               </div>
                               <div className="flex flex-wrap gap-2">
                                 {(expandedPhrases.has(indicator.id) ? indicator.matchedPhrases : indicator.matchedPhrases.slice(0, 5)).map((phrase, idx) => (
                                   <span
                                     key={idx}
-                                    className="inline-flex items-center px-2 py-1 rounded text-xs bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200"
+                                    className="inline-flex items-center px-2 py-1 rounded text-xs bg-yellow-100 text-yellow-800"
                                   >
                                     "{phrase}"
                                   </span>
@@ -662,7 +662,7 @@ function PahlkaImplementationsPageContent() {
                                 {indicator.matchedPhrases.length > 5 && (
                                   <button
                                     onClick={() => togglePhrases(indicator.id)}
-                                    className="inline-flex items-center px-2 py-1 rounded text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-900/50"
+                                    className="inline-flex items-center px-2 py-1 rounded text-xs bg-blue-100 text-blue-800 hover:bg-blue-200:bg-blue-900/50"
                                   >
                                     {expandedPhrases.has(indicator.id)
                                       ? 'Show Less'
@@ -690,8 +690,8 @@ export default function PahlkaImplementationsPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-          <div className="text-gray-500 dark:text-gray-400">Loading...</div>
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-gray-500">Loading...</div>
         </div>
       }
     >
