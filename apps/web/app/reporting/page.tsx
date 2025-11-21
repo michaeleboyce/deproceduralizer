@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Navigation from "@/components/Navigation";
+import BookmarkButton from "@/components/BookmarkButton";
 import { Suspense } from "react";
 
 interface ReportingSection {
@@ -229,13 +230,16 @@ function ReportingPageContent() {
       key={section.id}
       className="bg-white border border-slate-200 rounded-lg p-6 hover:shadow-lg transition-shadow"
     >
-      <Link
-        href={`/section/${section.id}`}
-        className="text-teal-700 font-semibold hover:text-teal-900 transition-colors text-lg"
-      >
-        {section.citation}
-      </Link>
-      <h3 className="text-slate-900 font-bold mt-2 mb-3">{section.heading}</h3>
+      <div className="flex items-start justify-between gap-4 mb-2">
+        <Link
+          href={`/section/${section.id}`}
+          className="text-teal-700 font-semibold hover:text-teal-900 transition-colors text-lg"
+        >
+          {section.citation}
+        </Link>
+        <BookmarkButton itemType="reporting" itemId={section.id} />
+      </div>
+      <h3 className="text-slate-900 font-bold mb-3">{section.heading}</h3>
 
       {/* Title/Chapter badges */}
       <div className="flex gap-2 mb-3">

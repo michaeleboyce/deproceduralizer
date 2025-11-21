@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import DiffMatchPatch from "diff-match-patch";
+import BookmarkButton from "./BookmarkButton";
 
 interface SimilarSection {
   id: string;
@@ -218,21 +219,24 @@ export default function SimilarSectionsList({
                     </p>
                   )}
                 </Link>
-                {expandedSectionId === similar.id ? (
-                  <button
-                    onClick={handleHideComparison}
-                    className="flex-shrink-0 px-3 py-1.5 bg-slate-500 text-white text-xs font-medium rounded hover:bg-slate-600 transition-colors"
-                  >
-                    Hide Comparison
-                  </button>
-                ) : (
-                  <button
-                    onClick={(e) => handleCompare(similar.id, e)}
-                    className="flex-shrink-0 px-3 py-1.5 bg-sky-600 text-white text-xs font-medium rounded hover:bg-sky-700 transition-colors"
-                  >
-                    Compare
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  <BookmarkButton itemType="section" itemId={similar.id} />
+                  {expandedSectionId === similar.id ? (
+                    <button
+                      onClick={handleHideComparison}
+                      className="flex-shrink-0 px-3 py-1.5 bg-slate-500 text-white text-xs font-medium rounded hover:bg-slate-600 transition-colors"
+                    >
+                      Hide Comparison
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => handleCompare(similar.id, e)}
+                      className="flex-shrink-0 px-3 py-1.5 bg-sky-600 text-white text-xs font-medium rounded hover:bg-sky-700 transition-colors"
+                    >
+                      Compare
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 

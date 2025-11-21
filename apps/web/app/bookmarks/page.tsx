@@ -8,7 +8,7 @@ import { Bookmark, Trash2, Edit3, ExternalLink } from 'lucide-react';
 interface Bookmark {
   id: number;
   jurisdiction: string;
-  itemType: 'section' | 'conflict' | 'duplicate' | 'reporting' | 'anachronism' | 'implementation';
+  itemType: 'section' | 'conflict' | 'duplicate' | 'reporting' | 'anachronism' | 'implementation' | 'implementation_indicator' | 'anachronism_indicator';
   itemId: string;
   note: string | null;
   createdAt: string;
@@ -101,6 +101,14 @@ export default function BookmarksPage() {
         return `/section/${bookmark.itemId}#anachronisms`;
       case 'implementation':
         return `/section/${bookmark.itemId}#pahlka-implementation`;
+      case 'implementation_indicator':
+        // itemId format: "sectionId:indicatorId"
+        const [implSectionId, implIndicatorId] = bookmark.itemId.split(':');
+        return `/section/${implSectionId}#indicator-${implIndicatorId}`;
+      case 'anachronism_indicator':
+        // itemId format: "sectionId:indicatorId"
+        const [anaSectionId, anaIndicatorId] = bookmark.itemId.split(':');
+        return `/section/${anaSectionId}#indicator-${anaIndicatorId}`;
       case 'conflict':
       case 'duplicate':
         // itemId format: "sectionA:sectionB"
@@ -112,6 +120,12 @@ export default function BookmarksPage() {
   }
 
   function formatItemType(type: string): string {
+    if (type === 'implementation_indicator') {
+      return 'Implementation Item';
+    }
+    if (type === 'anachronism_indicator') {
+      return 'Anachronism Item';
+    }
     return type.charAt(0).toUpperCase() + type.slice(1);
   }
 
@@ -123,8 +137,12 @@ export default function BookmarksPage() {
         return 'bg-violet-100 text-violet-700';
       case 'anachronism':
         return 'bg-red-100 text-red-700';
+      case 'anachronism_indicator':
+        return 'bg-rose-100 text-rose-700';
       case 'implementation':
         return 'bg-purple-100 text-purple-700';
+      case 'implementation_indicator':
+        return 'bg-indigo-100 text-indigo-700';
       case 'conflict':
         return 'bg-orange-100 text-orange-700';
       case 'duplicate':
@@ -138,7 +156,7 @@ export default function BookmarksPage() {
     ? bookmarks
     : bookmarks.filter(b => b.itemType === filterType);
 
-  const itemTypes = ['all', 'section', 'reporting', 'anachronism', 'implementation', 'conflict', 'duplicate'];
+  const itemTypes = ['all', 'section', 'reporting', 'anachronism', 'anachronism_indicator', 'implementation', 'implementation_indicator', 'conflict', 'duplicate'];
   const typeCounts = itemTypes.reduce((acc, type) => {
     acc[type] = type === 'all' ? bookmarks.length : bookmarks.filter(b => b.itemType === type).length;
     return acc;

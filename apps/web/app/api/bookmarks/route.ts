@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     }
 
     // Validate item type
-    const validItemTypes = ['section', 'conflict', 'duplicate', 'reporting', 'anachronism', 'implementation'];
+    const validItemTypes = ['section', 'conflict', 'duplicate', 'reporting', 'anachronism', 'implementation', 'implementation_indicator', 'anachronism_indicator'];
     if (!validItemTypes.includes(itemType)) {
       return NextResponse.json(
         { error: `Invalid itemType. Must be one of: ${validItemTypes.join(', ')}` },

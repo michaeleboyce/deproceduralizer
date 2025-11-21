@@ -184,21 +184,28 @@ export default function PahlkaImplementationDisplay({
                 return (
                   <div
                     key={indicator.id}
-                    className={`p-4 rounded-lg border ${colors.border} ${colors.bg}`}
+                    id={`indicator-${indicator.id}`}
+                    className={`p-4 rounded-lg border ${colors.border} ${colors.bg} scroll-mt-20`}
                   >
                     {/* Indicator header */}
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      <span className={`inline-block px-2 py-1 ${colors.badge} text-white text-xs font-bold rounded`}>
-                        {indicator.complexity}
-                      </span>
-                      <span className="inline-block px-2 py-1 bg-slate-200 text-slate-700 text-xs font-medium rounded">
-                        {formatCategory(indicator.category)}
-                      </span>
-                      {indicator.effortEstimate && (
-                        <span className="inline-block px-2 py-1 bg-amber-100 text-amber-700 text-xs font-medium rounded">
-                          Effort: {indicator.effortEstimate}
+                    <div className="flex flex-wrap gap-2 mb-3 items-start justify-between">
+                      <div className="flex flex-wrap gap-2">
+                        <span className={`inline-block px-2 py-1 ${colors.badge} text-white text-xs font-bold rounded`}>
+                          {indicator.complexity}
                         </span>
-                      )}
+                        <span className="inline-block px-2 py-1 bg-slate-200 text-slate-700 text-xs font-medium rounded">
+                          {formatCategory(indicator.category)}
+                        </span>
+                        {indicator.effortEstimate && (
+                          <span className="inline-block px-2 py-1 bg-amber-100 text-amber-700 text-xs font-medium rounded">
+                            Effort: {indicator.effortEstimate}
+                          </span>
+                        )}
+                      </div>
+                      <BookmarkButton
+                        itemType="implementation_indicator"
+                        itemId={`${sectionId}:${indicator.id}`}
+                      />
                     </div>
 
                     {/* Explanation */}

@@ -19,7 +19,7 @@ import {
   pahlkaImplementationIndicators,
   sectionPahlkaHighlights,
 } from "@/db/schema";
-import { eq, or, and, sql } from "drizzle-orm";
+import { eq, or, and, sql, inArray } from "drizzle-orm";
 import SimilarSectionsList from "@/components/SimilarSectionsList";
 import { highlightPhrases } from "@/lib/highlight";
 import Navigation from "@/components/Navigation";
@@ -375,9 +375,31 @@ export default async function SectionPage({
     }
   }
 
-  // Apply highlighting to section HTML if there are phrases
-  const highlightedHtml = section.hasReporting && phrasesToHighlight.length > 0
-    ? highlightPhrases(section.textHtml, phrasesToHighlight.map(h => h.phrase))
+  // Collect all phrases to highlight (reporting, Pahlka implementation, and anachronism)
+  const allPhrasesToHighlight: string[] = [];
+
+  // Add reporting phrases
+  if (section.hasReporting && phrasesToHighlight.length > 0) {
+    allPhrasesToHighlight.push(...phrasesToHighlight.map(h => h.phrase));
+  }
+
+  // Add Pahlka implementation phrases
+  if (pahlkaIndicatorsData.length > 0) {
+    pahlkaIndicatorsData.forEach(indicator => {
+      allPhrasesToHighlight.push(...indicator.matchedPhrases);
+    });
+  }
+
+  // Add anachronism phrases
+  if (anachronismIndicatorsData.length > 0) {
+    anachronismIndicatorsData.forEach(indicator => {
+      allPhrasesToHighlight.push(...indicator.matchedPhrases);
+    });
+  }
+
+  // Apply highlighting to section HTML if there are any phrases
+  const highlightedHtml = allPhrasesToHighlight.length > 0
+    ? highlightPhrases(section.textHtml, allPhrasesToHighlight)
     : section.textHtml;
 
   // Format currency
@@ -542,23 +564,26 @@ export default async function SectionPage({
 
           {/* Reporting Requirements */}
           {section.hasReporting && (
-            <div className="bg-violet-50 border border-violet-200 rounded-lg p-6 mb-6 shadow-sm">
-              <div className="flex items-center gap-2 mb-3 flex-wrap">
-                <span className="inline-block px-3 py-1 bg-violet-600 text-white text-sm font-semibold rounded-full">
-                  Reporting Requirement
-                </span>
-                {sectionTagsData.length > 0 && (
-                  <div className="flex gap-2 flex-wrap">
-                    {sectionTagsData.map((tagObj, index) => (
-                      <span
-                        key={index}
-                        className="inline-block px-2 py-0.5 bg-violet-100 text-violet-800 text-xs font-medium rounded"
-                      >
-                        {formatTag(tagObj.tag)}
-                      </span>
-                    ))}
-                  </div>
-                )}
+            <div id="reporting" className="bg-violet-50 border border-violet-200 rounded-lg p-6 mb-6 shadow-sm scroll-mt-20">
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="inline-block px-3 py-1 bg-violet-600 text-white text-sm font-semibold rounded-full">
+                    Reporting Requirement
+                  </span>
+                  {sectionTagsData.length > 0 && (
+                    <div className="flex gap-2 flex-wrap">
+                      {sectionTagsData.map((tagObj, index) => (
+                        <span
+                          key={index}
+                          className="inline-block px-2 py-0.5 bg-violet-100 text-violet-800 text-xs font-medium rounded"
+                        >
+                          {formatTag(tagObj.tag)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <BookmarkButton itemType="reporting" itemId={section.id} />
               </div>
               {section.reportingSummary && (
                 <p className="text-slate-700 text-sm leading-relaxed">
@@ -624,28 +649,35 @@ export default async function SectionPage({
                   {anachronismIndicatorsData.map((indicator, index) => (
                     <div
                       key={index}
-                      className="bg-white/60 rounded-lg p-4 border border-slate-200"
+                      id={`indicator-${indicator.id}`}
+                      className="bg-white/60 rounded-lg p-4 border border-slate-200 scroll-mt-20"
                     >
-                      <div className="flex items-start gap-3 mb-2">
-                        <span className={`inline-block px-2 py-1 text-white text-xs font-semibold rounded ${
-                          indicator.severity === 'CRITICAL' ? 'bg-red-600' :
-                          indicator.severity === 'HIGH' ? 'bg-orange-600' :
-                          indicator.severity === 'MEDIUM' ? 'bg-yellow-600' :
-                          'bg-slate-600'
-                        }`}>
-                          {indicator.severity}
-                        </span>
-                        <span className="inline-block px-2 py-1 bg-slate-200 text-slate-700 text-xs font-medium rounded">
-                          {indicator.category.replace(/_/g, ' ').toUpperCase()}
-                        </span>
-                        <span className={`inline-block px-2 py-1 text-xs font-medium rounded ${
-                          indicator.recommendation === 'REPEAL' ? 'bg-red-100 text-red-700' :
-                          indicator.recommendation === 'UPDATE' ? 'bg-orange-100 text-orange-700' :
-                          indicator.recommendation === 'REVIEW' ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-green-100 text-green-700'
-                        }`}>
-                          {indicator.recommendation}
-                        </span>
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div className="flex items-start gap-3 flex-wrap">
+                          <span className={`inline-block px-2 py-1 text-white text-xs font-semibold rounded ${
+                            indicator.severity === 'CRITICAL' ? 'bg-red-600' :
+                            indicator.severity === 'HIGH' ? 'bg-orange-600' :
+                            indicator.severity === 'MEDIUM' ? 'bg-yellow-600' :
+                            'bg-slate-600'
+                          }`}>
+                            {indicator.severity}
+                          </span>
+                          <span className="inline-block px-2 py-1 bg-slate-200 text-slate-700 text-xs font-medium rounded">
+                            {indicator.category.replace(/_/g, ' ').toUpperCase()}
+                          </span>
+                          <span className={`inline-block px-2 py-1 text-xs font-medium rounded ${
+                            indicator.recommendation === 'REPEAL' ? 'bg-red-100 text-red-700' :
+                            indicator.recommendation === 'UPDATE' ? 'bg-orange-100 text-orange-700' :
+                            indicator.recommendation === 'REVIEW' ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-green-100 text-green-700'
+                          }`}>
+                            {indicator.recommendation}
+                          </span>
+                        </div>
+                        <BookmarkButton
+                          itemType="anachronism_indicator"
+                          itemId={`${section.id}:${indicator.id}`}
+                        />
                       </div>
 
                       <p className="text-sm text-slate-700 mb-3">

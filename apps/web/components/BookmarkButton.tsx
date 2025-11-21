@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Bookmark, BookmarkCheck, X } from 'lucide-react';
+import { Bookmark, BookmarkCheck, X, Edit3 } from 'lucide-react';
 
 interface BookmarkButtonProps {
-  itemType: 'section' | 'conflict' | 'duplicate' | 'reporting' | 'anachronism' | 'implementation';
+  itemType: 'section' | 'conflict' | 'duplicate' | 'reporting' | 'anachronism' | 'implementation' | 'implementation_indicator' | 'anachronism_indicator';
   itemId: string;
   onBookmarkChange?: (isBookmarked: boolean) => void;
 }
@@ -152,9 +152,14 @@ export default function BookmarkButton({ itemType, itemId, onBookmarkChange }: B
           ) : (
             <Bookmark size={16} />
           )}
-          {/* Note indicator badge */}
+          {/* Note indicator badge - prominent red circle with pen icon */}
           {isBookmarked && note && (
-            <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-500 rounded-full border border-white"></span>
+            <span
+              className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full border border-white flex items-center justify-center shadow-sm transition-transform hover:scale-125 hover:shadow-md"
+              title="Has note - Click to edit"
+            >
+              <Edit3 size={9} className="text-white" strokeWidth={3} />
+            </span>
           )}
         </div>
         <span className="text-sm font-medium">
@@ -163,13 +168,21 @@ export default function BookmarkButton({ itemType, itemId, onBookmarkChange }: B
 
         {/* Remove icon on hover */}
         {isBookmarked && isHovered && !isLoading && (
-          <button
+          <span
             onClick={handleRemoveClick}
-            className="ml-1 p-0.5 hover:bg-red-100 rounded transition-colors"
+            className="ml-1 p-0.5 hover:bg-red-100 rounded transition-colors cursor-pointer inline-flex"
             title="Remove bookmark"
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleRemoveClick(e as any);
+              }
+            }}
           >
             <X size={14} className="text-red-600" />
-          </button>
+          </span>
         )}
       </button>
 
