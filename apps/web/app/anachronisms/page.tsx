@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import Navigation from "@/components/Navigation";
+import AnachronismIndicatorCard from "@/components/AnachronismIndicatorCard";
 import { Suspense } from "react";
 
 interface AnachronismIndicator {
@@ -14,25 +14,21 @@ interface AnachronismIndicator {
   recommendation: string;
   explanation: string;
   matchedPhrases: string[];
-}
-
-interface AnachronismSection {
-  id: string;
+  // Section context
+  sectionId: string;
   citation: string;
   heading: string;
-  title_label: string;
-  chapter_label: string;
-  has_anachronism: boolean;
-  overall_severity: string;
+  titleLabel: string;
+  chapterLabel: string;
+  // Parent analysis
+  overallSeverity: string | null;
+  requiresImmediateReview: boolean;
   summary: string | null;
-  requires_immediate_review: boolean;
-  model_used: string | null;
-  analyzed_at: string;
-  indicators: AnachronismIndicator[];
+  modelUsed: string | null;
 }
 
 interface AnachronismResponse {
-  results: AnachronismSection[];
+  results: AnachronismIndicator[];
   total: number;
   filters: {
     severity: string | null;
@@ -52,7 +48,7 @@ function AnachronismsPageContent() {
   const searchParams = useSearchParams();
 
   // State
-  const [results, setResults] = useState<AnachronismSection[]>([]);
+  const [results, setResults] = useState<AnachronismIndicator[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
@@ -73,6 +69,7 @@ function AnachronismsPageContent() {
   const [appliedChapter, setAppliedChapter] = useState("");
   const [appliedRequiresReview, setAppliedRequiresReview] = useState(false);
   const [appliedSearchQuery, setAppliedSearchQuery] = useState("");
+  const [appliedSortBy, setAppliedSortBy] = useState("severity");
 
   // Available options
   const [allCategories, setAllCategories] = useState<Array<{ category: string; count: number }>>([]);
@@ -119,6 +116,7 @@ function AnachronismsPageContent() {
     setAppliedChapter(urlChapter);
     setAppliedRequiresReview(urlRequiresReview);
     setAppliedSearchQuery(urlSearchQuery);
+    setAppliedSortBy(urlSortBy);
 
     fetchAnachronismData(urlSeverity, urlCategory, urlTitle, urlChapter, urlRequiresReview, urlSearchQuery, urlSortBy);
   }, [searchParams]);
@@ -148,7 +146,7 @@ function AnachronismsPageContent() {
     category: string = selectedCategory,
     title: string = selectedTitle,
     chapter: string = selectedChapter,
-    review: boolean = requiresReview,
+    requiresRev: boolean = requiresReview,
     search: string = searchQuery,
     sort: string = sortBy
   ) => {
@@ -161,26 +159,25 @@ function AnachronismsPageContent() {
       if (category) params.append("category", category);
       if (title) params.append("title", title);
       if (chapter) params.append("chapter", chapter);
-      if (review) params.append("requiresReview", "true");
+      if (requiresRev) params.append("requiresReview", "true");
       if (search) params.append("searchQuery", search);
       params.append("sortBy", sort);
 
-      const response = await fetch(`/api/anachronisms?${params.toString()}`);
+      const url = `/api/anachronism-indicators?${params.toString()}`;
+      const response = await fetch(url);
 
       if (!response.ok) {
-        throw new Error("Failed to fetch anachronisms");
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       const data: AnachronismResponse = await response.json();
-
       setResults(data.results);
       setTotal(data.total);
       setAllCategories(data.allCategories);
       setSeverityDistribution(data.severityDistribution);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
-      setResults([]);
-      setTotal(0);
+      setError(err instanceof Error ? err.message : "Unknown error");
+      console.error("Error fetching anachronism data:", err);
     } finally {
       setLoading(false);
     }
@@ -194,7 +191,7 @@ function AnachronismsPageContent() {
     if (selectedChapter) params.append("chapter", selectedChapter);
     if (requiresReview) params.append("requiresReview", "true");
     if (searchQuery) params.append("searchQuery", searchQuery);
-    if (sortBy !== "severity") params.append("sortBy", sortBy);
+    params.append("sortBy", sortBy);
 
     router.push(`/anachronisms?${params.toString()}`);
   };
@@ -210,355 +207,271 @@ function AnachronismsPageContent() {
     router.push("/anachronisms");
   };
 
-  const getSeverityColor = (severity: string) => {
+  function getSeverityColor(severity: string): string {
     switch (severity) {
-      case "CRITICAL": return "text-red-600 bg-red-50 border-red-300";
-      case "HIGH": return "text-orange-600 bg-orange-50 border-orange-300";
-      case "MEDIUM": return "text-yellow-600 bg-yellow-50 border-yellow-300";
-      case "LOW": return "text-slate-600 bg-slate-50 border-slate-300";
-      default: return "text-slate-600 bg-slate-50 border-slate-300";
+      case "CRITICAL":
+        return "text-red-600";
+      case "HIGH":
+        return "text-orange-600";
+      case "MEDIUM":
+        return "text-yellow-600";
+      case "LOW":
+        return "text-slate-600";
+      default:
+        return "text-gray-600";
     }
-  };
+  }
 
-  const getSeverityBadgeColor = (severity: string) => {
-    switch (severity) {
-      case "CRITICAL": return "bg-red-600";
-      case "HIGH": return "bg-orange-600";
-      case "MEDIUM": return "bg-yellow-600";
-      case "LOW": return "bg-slate-600";
-      default: return "bg-slate-600";
-    }
-  };
+  function formatCategoryName(category: string): string {
+    return category
+      .split("_")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
+  }
+
+  const hasActiveFilters =
+    appliedSeverity ||
+    appliedCategory ||
+    appliedTitle ||
+    appliedChapter ||
+    appliedRequiresReview ||
+    appliedSearchQuery;
 
   return (
-    <>
-      <Navigation breadcrumbs={[
-        { label: "Home", href: "/" },
-        { label: "Anachronisms" }
-      ]} />
+    <div className="min-h-screen bg-gray-50">
+      <Navigation />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            Anachronism Analysis
+          </h1>
+          <p className="text-gray-600">
+            Individual anachronism issues identified in the legal code
+          </p>
+        </div>
 
-      <div className="min-h-screen bg-slate-50 py-8 px-4">
-        <div className="max-w-7xl mx-auto">
-          {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-slate-900 mb-2">Anachronistic Language Detection</h1>
-            <p className="text-slate-600">
-              Sections containing outdated, obsolete, or potentially problematic language that may require review.
-            </p>
+        {/* Stats Dashboard */}
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
+          {/* Total indicators */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="text-sm font-medium text-gray-600 mb-1">
+              Total Issues
+            </div>
+            <div className="text-3xl font-bold text-gray-900">
+              {total.toLocaleString()}
+            </div>
           </div>
 
-          {/* Statistics Cards */}
-          {severityDistribution.length > 0 && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-              {severityDistribution.map((item) => (
-                <div
-                  key={item.severity}
-                  className={`rounded-lg border-2 p-4 ${getSeverityColor(item.severity)}`}
-                >
-                  <div className="text-2xl font-bold mb-1">{item.count}</div>
-                  <div className="text-sm font-medium">{item.severity}</div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Filters */}
-          <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6 mb-6">
-            <h2 className="text-lg font-semibold text-slate-900 mb-4">Filters</h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-              {/* Severity */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Severity
-                </label>
-                <select
-                  value={selectedSeverity}
-                  onChange={(e) => setSelectedSeverity(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
-                >
-                  <option value="">All Severities</option>
-                  <option value="CRITICAL">CRITICAL</option>
-                  <option value="HIGH">HIGH</option>
-                  <option value="MEDIUM">MEDIUM</option>
-                  <option value="LOW">LOW</option>
-                </select>
+          {/* Severity distribution */}
+          {severityDistribution.map((dist) => (
+            <div key={dist.severity} className="bg-white rounded-lg shadow p-6">
+              <div className="text-sm font-medium text-gray-600 mb-1">
+                {dist.severity}
               </div>
-
-              {/* Category */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Category
-                </label>
-                <select
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
-                >
-                  <option value="">All Categories</option>
-                  {allCategories.map((cat) => (
-                    <option key={cat.category} value={cat.category}>
-                      {cat.category.replace(/_/g, ' ').toUpperCase()} ({cat.count})
-                    </option>
-                  ))}
-                </select>
+              <div className={`text-3xl font-bold ${getSeverityColor(dist.severity)}`}>
+                {dist.count.toLocaleString()}
               </div>
-
-              {/* Title */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Title
-                </label>
-                <select
-                  value={selectedTitle}
-                  onChange={(e) => setSelectedTitle(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
-                >
-                  <option value="">All Titles</option>
-                  {availableTitles.map((title) => (
-                    <option key={title} value={title}>{title}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Chapter */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Chapter
-                </label>
-                <select
-                  value={selectedChapter}
-                  onChange={(e) => setSelectedChapter(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  disabled={!selectedTitle}
-                >
-                  <option value="">All Chapters</option>
-                  {availableChapters.map((chapter) => (
-                    <option key={chapter} value={chapter}>{chapter}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Search */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Search
-                </label>
-                <input
-                  type="text"
-                  placeholder="Search summary or heading..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") applyFilters();
-                  }}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
-                />
-              </div>
-
-              {/* Sort By */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Sort By
-                </label>
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
-                >
-                  <option value="severity">Severity (Critical First)</option>
-                  <option value="citation">Citation</option>
-                  <option value="heading">Heading</option>
-                </select>
+              <div className="text-xs text-gray-500 mt-1">
+                {total > 0 ? `${Math.round((dist.count / total) * 100)}%` : "0%"}
               </div>
             </div>
+          ))}
+        </div>
 
-            {/* Requires Review Checkbox */}
-            <div className="mb-4">
-              <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
+        {/* Filters */}
+        <div className="bg-white border border-slate-200 rounded-lg p-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            {/* Severity filter */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Severity
+              </label>
+              <select
+                value={selectedSeverity}
+                onChange={(e) => setSelectedSeverity(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-slate-900"
+              >
+                <option value="">All Severities</option>
+                <option value="CRITICAL">CRITICAL</option>
+                <option value="HIGH">HIGH</option>
+                <option value="MEDIUM">MEDIUM</option>
+                <option value="LOW">LOW</option>
+              </select>
+            </div>
+
+            {/* Category filter */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Category
+              </label>
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-slate-900"
+              >
+                <option value="">All Categories</option>
+                {allCategories.map((cat) => (
+                  <option key={cat.category} value={cat.category}>
+                    {formatCategoryName(cat.category)} ({cat.count})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Title filter */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Title
+              </label>
+              <select
+                value={selectedTitle}
+                onChange={(e) => setSelectedTitle(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-slate-900"
+              >
+                <option value="">All Titles</option>
+                {availableTitles.map((title) => (
+                  <option key={title} value={title}>
+                    {title}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Chapter filter */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Chapter
+              </label>
+              <select
+                value={selectedChapter}
+                onChange={(e) => setSelectedChapter(e.target.value)}
+                disabled={!selectedTitle}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
+              >
+                <option value="">All Chapters</option>
+                {availableChapters.map((chapter) => (
+                  <option key={chapter} value={chapter}>
+                    {chapter}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Sort by */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Sort By
+              </label>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-slate-900"
+              >
+                <option value="severity">Severity (Critical → Low)</option>
+                <option value="category">Category (A → Z)</option>
+                <option value="citation">Citation (A → Z)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Search and checkboxes */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Search
+              </label>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search in explanation or section heading..."
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-slate-900 placeholder:text-slate-400"
+              />
+            </div>
+
+            <div className="flex items-end">
+              <label className="flex items-center space-x-2 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={requiresReview}
                   onChange={(e) => setRequiresReview(e.target.checked)}
-                  className="w-4 h-4 text-red-600 border-slate-300 rounded focus:ring-red-500"
+                  className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
                 />
-                Show only sections requiring immediate review
+                <span className="text-sm text-slate-700">
+                  Requires Immediate Review
+                </span>
               </label>
             </div>
+          </div>
 
-            {/* Action Buttons */}
-            <div className="flex gap-3">
-              <button
-                onClick={applyFilters}
-                className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 transition-colors font-medium"
-              >
-                Apply Filters
-              </button>
+          {/* Action buttons */}
+          <div className="flex gap-3">
+            <button
+              onClick={applyFilters}
+              className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2"
+            >
+              Apply Filters
+            </button>
+            {hasActiveFilters && (
               <button
                 onClick={clearFilters}
-                className="px-4 py-2 bg-slate-200 text-slate-700 rounded-md hover:bg-slate-300 transition-colors font-medium"
+                className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
               >
-                Clear All
+                Clear Filters
               </button>
-            </div>
+            )}
+          </div>
+        </div>
+
+        {/* Results */}
+        <div className="bg-white rounded-lg shadow">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-900">
+              Results ({total.toLocaleString()} anachronism issues)
+            </h2>
           </div>
 
-          {/* Active Filters */}
-          {(appliedSeverity || appliedCategory || appliedTitle || appliedChapter || appliedRequiresReview || appliedSearchQuery) && (
-            <div className="bg-teal-50 border border-teal-200 rounded-lg p-4 mb-6">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-medium text-teal-900">Active Filters:</span>
-                {appliedSeverity && (
-                  <span className="inline-block px-2 py-1 bg-teal-100 text-teal-800 text-xs rounded">
-                    Severity: {appliedSeverity}
-                  </span>
-                )}
-                {appliedCategory && (
-                  <span className="inline-block px-2 py-1 bg-teal-100 text-teal-800 text-xs rounded">
-                    Category: {appliedCategory.replace(/_/g, ' ')}
-                  </span>
-                )}
-                {appliedTitle && (
-                  <span className="inline-block px-2 py-1 bg-teal-100 text-teal-800 text-xs rounded">
-                    Title: {appliedTitle}
-                  </span>
-                )}
-                {appliedChapter && (
-                  <span className="inline-block px-2 py-1 bg-teal-100 text-teal-800 text-xs rounded">
-                    Chapter: {appliedChapter}
-                  </span>
-                )}
-                {appliedRequiresReview && (
-                  <span className="inline-block px-2 py-1 bg-red-100 text-red-800 text-xs rounded font-medium">
-                    Requires Immediate Review
-                  </span>
-                )}
-                {appliedSearchQuery && (
-                  <span className="inline-block px-2 py-1 bg-teal-100 text-teal-800 text-xs rounded">
-                    Search: &ldquo;{appliedSearchQuery}&rdquo;
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Results Count */}
-          <div className="mb-4">
-            <p className="text-slate-600">
-              Found <span className="font-semibold text-slate-900">{total}</span> section{total !== 1 ? 's' : ''} with anachronistic language
-            </p>
-          </div>
-
-          {/* Loading State */}
           {loading && (
-            <div className="text-center py-12">
-              <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-teal-600 border-r-transparent"></div>
-              <p className="mt-4 text-slate-600">Loading anachronisms...</p>
+            <div className="px-6 py-12 text-center text-gray-500">
+              Loading anachronism analysis...
             </div>
           )}
 
-          {/* Error State */}
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-              <p className="text-red-800 font-medium">Error: {error}</p>
+            <div className="px-6 py-12 text-center text-red-600">
+              Error: {error}
             </div>
           )}
 
-          {/* Results */}
-          {!loading && !error && (
-            <div className="space-y-4">
-              {results.length === 0 ? (
-                <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-12 text-center">
-                  <p className="text-slate-500">No anachronisms found matching the current filters.</p>
-                </div>
-              ) : (
-                results.map((section) => (
-                  <div
-                    key={section.id}
-                    className={`bg-white rounded-lg border-2 shadow-sm p-6 hover:shadow-md transition-shadow ${
-                      section.requires_immediate_review ? 'border-red-400' : 'border-slate-200'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1">
-                        <Link
-                          href={`/section/${section.id}`}
-                          className="text-lg font-semibold text-teal-700 hover:text-teal-800 hover:underline"
-                        >
-                          {section.citation}
-                        </Link>
-                        <p className="text-slate-600 text-sm mt-1">{section.heading}</p>
-                        <div className="text-xs text-slate-500 mt-1">
-                          {section.title_label} › {section.chapter_label}
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-2 items-end">
-                        <span className={`inline-block px-3 py-1 text-white text-sm font-semibold rounded-full ${getSeverityBadgeColor(section.overall_severity)}`}>
-                          {section.overall_severity}
-                        </span>
-                        {section.requires_immediate_review && (
-                          <span className="inline-block px-2 py-1 bg-red-600 text-white text-xs font-medium rounded">
-                            REVIEW REQUIRED
-                          </span>
-                        )}
-                      </div>
-                    </div>
+          {!loading && !error && results.length === 0 && (
+            <div className="px-6 py-12 text-center text-gray-500">
+              No anachronism issues found matching your filters.
+            </div>
+          )}
 
-                    {section.summary && (
-                      <p className="text-slate-700 text-sm mb-4 leading-relaxed">
-                        {section.summary}
-                      </p>
-                    )}
-
-                    {section.indicators.length > 0 && (
-                      <div className="space-y-2">
-                        <span className="text-xs font-semibold text-slate-600">
-                          Indicators ({section.indicators.length}):
-                        </span>
-                        {section.indicators.slice(0, 3).map((indicator) => (
-                          <div
-                            key={indicator.id}
-                            className="bg-slate-50 rounded p-3 border border-slate-200 text-sm"
-                          >
-                            <div className="flex gap-2 mb-1">
-                              <span className={`inline-block px-2 py-0.5 text-white text-xs font-semibold rounded ${getSeverityBadgeColor(indicator.severity)}`}>
-                                {indicator.severity}
-                              </span>
-                              <span className="inline-block px-2 py-0.5 bg-slate-200 text-slate-700 text-xs font-medium rounded">
-                                {indicator.category.replace(/_/g, ' ').toUpperCase()}
-                              </span>
-                            </div>
-                            <p className="text-slate-700 text-xs mt-1">{indicator.explanation}</p>
-                          </div>
-                        ))}
-                        {section.indicators.length > 3 && (
-                          <Link
-                            href={`/section/${section.id}#anachronisms`}
-                            className="text-xs text-teal-600 hover:text-teal-700 font-medium inline-block mt-1"
-                          >
-                            + {section.indicators.length - 3} more indicator{section.indicators.length - 3 !== 1 ? 's' : ''}
-                          </Link>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
+          {!loading && !error && results.length > 0 && (
+            <div className="p-6 space-y-4">
+              {results.map((indicator) => (
+                <AnachronismIndicatorCard key={indicator.id} {...indicator} />
+              ))}
             </div>
           )}
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
 export default function AnachronismsPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-teal-600 border-r-transparent"></div>
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-gray-500">Loading...</div>
+        </div>
+      }
+    >
       <AnachronismsPageContent />
     </Suspense>
   );

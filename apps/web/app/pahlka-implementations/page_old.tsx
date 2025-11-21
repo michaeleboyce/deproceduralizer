@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import Navigation from "@/components/Navigation";
-import ImplementationIndicatorCard from "@/components/ImplementationIndicatorCard";
+import { CitationLink } from "@/components/CitationLink";
 import { Suspense } from "react";
 
 interface ImplementationIndicator {
@@ -14,21 +15,25 @@ interface ImplementationIndicator {
   effortEstimate: string | null;
   explanation: string;
   matchedPhrases: string[];
-  // Section context
-  sectionId: string;
+}
+
+interface ImplementationSection {
+  id: string;
   citation: string;
   heading: string;
-  titleLabel: string;
-  chapterLabel: string;
-  // Parent analysis
-  overallComplexity: string | null;
-  requiresTechnicalReview: boolean;
+  title_label: string;
+  chapter_label: string;
+  has_implementation_issues: boolean;
+  overall_complexity: string;
   summary: string | null;
-  modelUsed: string | null;
+  requires_technical_review: boolean;
+  model_used: string | null;
+  analyzed_at: string;
+  indicators: ImplementationIndicator[];
 }
 
 interface ImplementationResponse {
-  results: ImplementationIndicator[];
+  results: ImplementationSection[];
   total: number;
   filters: {
     complexity: string | null;
@@ -41,6 +46,7 @@ interface ImplementationResponse {
   };
   allCategories: Array<{ category: string; count: number }>;
   complexityDistribution: Array<{ complexity: string; count: number }>;
+  technicalReviewStats: { requires_review: number; total: number };
 }
 
 function PahlkaImplementationsPageContent() {
@@ -48,7 +54,7 @@ function PahlkaImplementationsPageContent() {
   const searchParams = useSearchParams();
 
   // State
-  const [results, setResults] = useState<ImplementationIndicator[]>([]);
+  const [results, setResults] = useState<ImplementationSection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
@@ -74,8 +80,50 @@ function PahlkaImplementationsPageContent() {
   // Available options
   const [allCategories, setAllCategories] = useState<Array<{ category: string; count: number }>>([]);
   const [complexityDistribution, setComplexityDistribution] = useState<Array<{ complexity: string; count: number }>>([]);
+  const [technicalReviewStats, setTechnicalReviewStats] = useState<{ requires_review: number; total: number }>({ requires_review: 0, total: 0 });
   const [availableTitles, setAvailableTitles] = useState<string[]>([]);
   const [availableChapters, setAvailableChapters] = useState<string[]>([]);
+
+  // Expand/collapse state for text truncation (track by indicator id)
+  const [expandedExplanations, setExpandedExplanations] = useState<Set<number>>(new Set());
+  const [expandedApproaches, setExpandedApproaches] = useState<Set<number>>(new Set());
+  const [expandedPhrases, setExpandedPhrases] = useState<Set<number>>(new Set());
+
+  const toggleExplanation = (indicatorId: number) => {
+    setExpandedExplanations(prev => {
+      const next = new Set(prev);
+      if (next.has(indicatorId)) {
+        next.delete(indicatorId);
+      } else {
+        next.add(indicatorId);
+      }
+      return next;
+    });
+  };
+
+  const toggleApproach = (indicatorId: number) => {
+    setExpandedApproaches(prev => {
+      const next = new Set(prev);
+      if (next.has(indicatorId)) {
+        next.delete(indicatorId);
+      } else {
+        next.add(indicatorId);
+      }
+      return next;
+    });
+  };
+
+  const togglePhrases = (indicatorId: number) => {
+    setExpandedPhrases(prev => {
+      const next = new Set(prev);
+      if (next.has(indicatorId)) {
+        next.delete(indicatorId);
+      } else {
+        next.add(indicatorId);
+      }
+      return next;
+    });
+  };
 
   // Load titles on mount
   useEffect(() => {
@@ -163,7 +211,7 @@ function PahlkaImplementationsPageContent() {
       if (search) params.append("searchQuery", search);
       params.append("sortBy", sort);
 
-      const url = `/api/pahlka-implementation-indicators?${params.toString()}`;
+      const url = `/api/pahlka-implementations?${params.toString()}`;
       const response = await fetch(url);
 
       if (!response.ok) {
@@ -175,6 +223,7 @@ function PahlkaImplementationsPageContent() {
       setTotal(data.total);
       setAllCategories(data.allCategories);
       setComplexityDistribution(data.complexityDistribution);
+      setTechnicalReviewStats(data.technicalReviewStats);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
       console.error("Error fetching implementation data:", err);
@@ -207,7 +256,7 @@ function PahlkaImplementationsPageContent() {
     router.push("/pahlka-implementations");
   };
 
-  function getComplexityColor(complexity: string): string {
+  const getComplexityColor = (complexity: string): string => {
     switch (complexity) {
       case "HIGH":
         return "text-red-600";
@@ -218,14 +267,27 @@ function PahlkaImplementationsPageContent() {
       default:
         return "text-gray-600";
     }
-  }
+  };
 
-  function formatCategoryName(category: string): string {
+  const getComplexityBgColor = (complexity: string): string => {
+    switch (complexity) {
+      case "HIGH":
+        return "bg-red-100 text-red-800";
+      case "MEDIUM":
+        return "bg-yellow-100 text-yellow-800";
+      case "LOW":
+        return "bg-blue-100 text-blue-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  const formatCategoryName = (category: string): string => {
     return category
       .split("_")
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
       .join(" ");
-  }
+  };
 
   const hasActiveFilters =
     appliedComplexity ||
@@ -245,16 +307,16 @@ function PahlkaImplementationsPageContent() {
             Pahlka Implementation Analysis
           </h1>
           <p className="text-gray-600">
-            Individual implementation issues analyzed using Jennifer Pahlka's "Recoding America" framework
+            Sections analyzed for implementation complexity using Jennifer Pahlka's "Recoding America" framework
           </p>
         </div>
 
         {/* Stats Dashboard */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          {/* Total indicators */}
+          {/* Total sections */}
           <div className="bg-white rounded-lg shadow p-6">
             <div className="text-sm font-medium text-gray-600 mb-1">
-              Total Issues
+              Total Sections
             </div>
             <div className="text-3xl font-bold text-gray-900">
               {total.toLocaleString()}
@@ -275,20 +337,37 @@ function PahlkaImplementationsPageContent() {
               </div>
             </div>
           ))}
+
+          {/* Technical review */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="text-sm font-medium text-gray-600 mb-1">
+              Needs Technical Review
+            </div>
+            <div className="text-3xl font-bold text-violet-600">
+              {technicalReviewStats.requires_review.toLocaleString()}
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              {technicalReviewStats.total > 0
+                ? `${Math.round((technicalReviewStats.requires_review / technicalReviewStats.total) * 100)}%`
+                : "0%"}
+            </div>
+          </div>
         </div>
 
         {/* Filters */}
-        <div className="bg-white border border-slate-200 rounded-lg p-6 mb-8">
+        <div className="bg-white rounded-lg shadow p-6 mb-8">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Filters</h2>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             {/* Complexity filter */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Complexity
               </label>
               <select
                 value={selectedComplexity}
                 onChange={(e) => setSelectedComplexity(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-slate-900"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">All Complexities</option>
                 <option value="HIGH">HIGH</option>
@@ -299,13 +378,13 @@ function PahlkaImplementationsPageContent() {
 
             {/* Category filter */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Category
               </label>
               <select
                 value={selectedCategory}
                 onChange={(e) => setSelectedCategory(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-slate-900"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">All Categories</option>
                 {allCategories.map((cat) => (
@@ -318,13 +397,13 @@ function PahlkaImplementationsPageContent() {
 
             {/* Title filter */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Title
               </label>
               <select
                 value={selectedTitle}
                 onChange={(e) => setSelectedTitle(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-slate-900"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">All Titles</option>
                 {availableTitles.map((title) => (
@@ -337,14 +416,14 @@ function PahlkaImplementationsPageContent() {
 
             {/* Chapter filter */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Chapter
               </label>
               <select
                 value={selectedChapter}
                 onChange={(e) => setSelectedChapter(e.target.value)}
                 disabled={!selectedTitle}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <option value="">All Chapters</option>
                 {availableChapters.map((chapter) => (
@@ -357,17 +436,20 @@ function PahlkaImplementationsPageContent() {
 
             {/* Sort by */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Sort By
+                <span className="ml-2 text-xs text-gray-500">
+                  (Currently: {appliedSortBy === 'complexity' ? 'Complexity ↓' : appliedSortBy === 'citation' ? 'Citation ↑' : 'Heading ↑'})
+                </span>
               </label>
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-slate-900"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="complexity">Complexity (High → Low)</option>
-                <option value="category">Category (A → Z)</option>
                 <option value="citation">Citation (A → Z)</option>
+                <option value="heading">Heading (A → Z)</option>
               </select>
             </div>
           </div>
@@ -375,15 +457,15 @@ function PahlkaImplementationsPageContent() {
           {/* Search and checkboxes */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Search
               </label>
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search in explanation, approach, or section heading..."
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-slate-900 placeholder:text-slate-400"
+                placeholder="Search in summary or heading..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
 
@@ -393,9 +475,9 @@ function PahlkaImplementationsPageContent() {
                   type="checkbox"
                   checked={requiresTechnicalReview}
                   onChange={(e) => setRequiresTechnicalReview(e.target.checked)}
-                  className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
-                <span className="text-sm text-slate-700">
+                <span className="text-sm text-gray-700">
                   Requires Technical Review
                 </span>
               </label>
@@ -406,14 +488,14 @@ function PahlkaImplementationsPageContent() {
           <div className="flex gap-3">
             <button
               onClick={applyFilters}
-              className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2"
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
             >
               Apply Filters
             </button>
             {hasActiveFilters && (
               <button
                 onClick={clearFilters}
-                className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
               >
                 Clear Filters
               </button>
@@ -425,7 +507,7 @@ function PahlkaImplementationsPageContent() {
         <div className="bg-white rounded-lg shadow">
           <div className="px-6 py-4 border-b border-gray-200">
             <h2 className="text-lg font-semibold text-gray-900">
-              Results ({total.toLocaleString()} implementation issues)
+              Results ({total.toLocaleString()} sections)
             </h2>
           </div>
 
@@ -448,9 +530,153 @@ function PahlkaImplementationsPageContent() {
           )}
 
           {!loading && !error && results.length > 0 && (
-            <div className="p-6 space-y-4">
-              {results.map((indicator) => (
-                <ImplementationIndicatorCard key={indicator.id} {...indicator} />
+            <div className="divide-y divide-gray-200">
+              {results.map((section) => (
+                <div key={section.id} className="px-6 py-6 hover:bg-gray-50:bg-gray-700/50">
+                  {/* Section header */}
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex-1">
+                      <CitationLink
+                        sectionId={section.id}
+                        className="text-lg font-semibold"
+                      >
+                        {section.citation}
+                      </CitationLink>
+                      <p className="text-gray-700 mt-1">{section.heading}</p>
+                      <div className="flex gap-2 mt-2 text-sm text-gray-500">
+                        <span>{section.title_label}</span>
+                        {section.chapter_label && (
+                          <>
+                            <span>•</span>
+                            <span>{section.chapter_label}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-2 ml-4">
+                      <span
+                        className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getComplexityBgColor(
+                          section.overall_complexity
+                        )}`}
+                      >
+                        {section.overall_complexity}
+                      </span>
+                      {section.requires_technical_review && (
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-violet-100 text-violet-800">
+                          Tech Review
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Summary */}
+                  {section.summary && (
+                    <div className="mb-4 text-gray-700 text-sm bg-gray-50 p-3 rounded">
+                      {section.summary}
+                    </div>
+                  )}
+
+                  {/* Indicators */}
+                  {section.indicators && section.indicators.length > 0 && (
+                    <div className="space-y-3">
+                      {section.indicators.map((indicator) => (
+                        <div
+                          key={indicator.id}
+                          className="border border-gray-200 rounded-lg p-4 bg-white"
+                        >
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex-1">
+                              <span className="text-sm font-medium text-gray-900">
+                                {formatCategoryName(indicator.category)}
+                              </span>
+                            </div>
+                            <span
+                              className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${getComplexityBgColor(
+                                indicator.complexity
+                              )}`}
+                            >
+                              {indicator.complexity}
+                            </span>
+                          </div>
+
+                          <div className="mb-3">
+                            <p className={`text-sm text-gray-700 ${!expandedExplanations.has(indicator.id) && indicator.explanation.length > 200 ? 'line-clamp-3' : ''}`}>
+                              {indicator.explanation}
+                            </p>
+                            {indicator.explanation.length > 200 && (
+                              <button
+                                onClick={() => toggleExplanation(indicator.id)}
+                                className="text-xs text-blue-600 hover:underline mt-1"
+                              >
+                                {expandedExplanations.has(indicator.id) ? 'Show Less' : 'Show More'}
+                              </button>
+                            )}
+                          </div>
+
+                          {indicator.implementationApproach && (
+                            <div className="mb-3">
+                              <div className="text-xs font-medium text-gray-500 mb-1">
+                                Implementation Approach:
+                              </div>
+                              <div className="bg-blue-50 p-2 rounded">
+                                <p className={`text-sm text-gray-700 ${!expandedApproaches.has(indicator.id) && indicator.implementationApproach.length > 150 ? 'line-clamp-2' : ''}`}>
+                                  {indicator.implementationApproach}
+                                </p>
+                                {indicator.implementationApproach.length > 150 && (
+                                  <button
+                                    onClick={() => toggleApproach(indicator.id)}
+                                    className="text-xs text-blue-600 hover:underline mt-1"
+                                  >
+                                    {expandedApproaches.has(indicator.id) ? 'Show Less' : 'Show More'}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {indicator.effortEstimate && (
+                            <div className="mb-3">
+                              <div className="text-xs font-medium text-gray-500 mb-1">
+                                Effort Estimate:
+                              </div>
+                              <div className="text-sm text-gray-600">
+                                {indicator.effortEstimate}
+                              </div>
+                            </div>
+                          )}
+
+                          {indicator.matchedPhrases && indicator.matchedPhrases.length > 0 && (
+                            <div>
+                              <div className="text-xs font-medium text-gray-500 mb-2">
+                                Matched Phrases {indicator.matchedPhrases.length > 5 && `(${indicator.matchedPhrases.length} total)`}:
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {(expandedPhrases.has(indicator.id) ? indicator.matchedPhrases : indicator.matchedPhrases.slice(0, 5)).map((phrase, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="inline-flex items-center px-2 py-1 rounded text-xs bg-yellow-100 text-yellow-800"
+                                  >
+                                    "{phrase}"
+                                  </span>
+                                ))}
+                                {indicator.matchedPhrases.length > 5 && (
+                                  <button
+                                    onClick={() => togglePhrases(indicator.id)}
+                                    className="inline-flex items-center px-2 py-1 rounded text-xs bg-blue-100 text-blue-800 hover:bg-blue-200:bg-blue-900/50"
+                                  >
+                                    {expandedPhrases.has(indicator.id)
+                                      ? 'Show Less'
+                                      : `Show ${indicator.matchedPhrases.length - 5} More`}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           )}

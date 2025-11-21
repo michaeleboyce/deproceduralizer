@@ -82,13 +82,16 @@ export default function Navigation({ breadcrumbs }: NavigationProps) {
               </Link>
               <Link
                 href="/browse"
-                className={`font-medium transition-colors ${
+                className={`font-medium transition-colors flex items-center gap-2 ${
                   pathname === "/browse"
                     ? "text-teal-700"
                     : "text-slate-700 hover:text-slate-900"
                 }`}
               >
                 Browse
+                <span className="text-xs px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded font-semibold">
+                  WIP
+                </span>
               </Link>
               <Link
                 href="/dashboard/conflicts"
