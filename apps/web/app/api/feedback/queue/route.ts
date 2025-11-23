@@ -53,7 +53,8 @@ export async function GET(request: NextRequest) {
         whereConditions.push(notInArray(anachronismIndicators.id, reviewedIds));
       }
 
-      let query = db
+      // Build base query
+      const baseQuery = db
         .select({
           id: anachronismIndicators.id,
           itemType: sql<string>`'anachronism_indicator'`,
@@ -78,21 +79,29 @@ export async function GET(request: NextRequest) {
         )
         .where(and(...whereConditions));
 
-      // Apply sorting
+      // Apply sorting and execute
+      let anachronisms;
       if (sortBy === "severity") {
-        query = query.orderBy(
-          sql`CASE ${anachronismIndicators.severity}
-            WHEN 'CRITICAL' THEN 1
-            WHEN 'HIGH' THEN 2
-            WHEN 'MEDIUM' THEN 3
-            WHEN 'LOW' THEN 4
-            ELSE 5 END`
-        );
+        anachronisms = await baseQuery
+          .orderBy(
+            sql`CASE ${anachronismIndicators.severity}
+              WHEN 'CRITICAL' THEN 1
+              WHEN 'HIGH' THEN 2
+              WHEN 'MEDIUM' THEN 3
+              WHEN 'LOW' THEN 4
+              ELSE 5 END`
+          )
+          .limit(limit)
+          .offset(offset);
       } else if (sortBy === "citation") {
-        query = query.orderBy(sections.citation);
+        anachronisms = await baseQuery
+          .orderBy(sections.citation)
+          .limit(limit)
+          .offset(offset);
+      } else {
+        anachronisms = await baseQuery.limit(limit).offset(offset);
       }
 
-      const anachronisms = await query.limit(limit).offset(offset);
       results.push(...anachronisms);
     }
 
@@ -106,7 +115,8 @@ export async function GET(request: NextRequest) {
         whereConditions.push(notInArray(pahlkaImplementationIndicators.id, reviewedIds));
       }
 
-      let query = db
+      // Build base query
+      const baseQuery = db
         .select({
           id: pahlkaImplementationIndicators.id,
           itemType: sql<string>`'implementation_indicator'`,
@@ -131,20 +141,28 @@ export async function GET(request: NextRequest) {
         )
         .where(and(...whereConditions));
 
-      // Apply sorting
+      // Apply sorting and execute
+      let implementations;
       if (sortBy === "complexity") {
-        query = query.orderBy(
-          sql`CASE ${pahlkaImplementationIndicators.complexity}
-            WHEN 'HIGH' THEN 1
-            WHEN 'MEDIUM' THEN 2
-            WHEN 'LOW' THEN 3
-            ELSE 4 END`
-        );
+        implementations = await baseQuery
+          .orderBy(
+            sql`CASE ${pahlkaImplementationIndicators.complexity}
+              WHEN 'HIGH' THEN 1
+              WHEN 'MEDIUM' THEN 2
+              WHEN 'LOW' THEN 3
+              ELSE 4 END`
+          )
+          .limit(limit)
+          .offset(offset);
       } else if (sortBy === "citation") {
-        query = query.orderBy(sections.citation);
+        implementations = await baseQuery
+          .orderBy(sections.citation)
+          .limit(limit)
+          .offset(offset);
+      } else {
+        implementations = await baseQuery.limit(limit).offset(offset);
       }
 
-      const implementations = await query.limit(limit).offset(offset);
       results.push(...implementations);
     }
 
