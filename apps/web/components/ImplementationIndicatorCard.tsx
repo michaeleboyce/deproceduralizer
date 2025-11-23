@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { ExternalLink } from 'lucide-react';
 import BookmarkButton from './BookmarkButton';
+import FeedbackButton from './FeedbackButton';
 import MatchedPhraseChips from './MatchedPhraseChips';
 
 interface ImplementationIndicatorCardProps {
@@ -81,7 +82,7 @@ export default function ImplementationIndicatorCard({
 
   return (
     <div className={`rounded-lg border ${colors.border} ${colors.bg} p-6 hover:shadow-md transition-shadow`}>
-      {/* Header with badges and bookmark */}
+      {/* Header with badges and action buttons */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex flex-wrap gap-2">
           <span className={`inline-block px-3 py-1 ${colors.badge} text-white text-xs font-bold rounded`}>
@@ -101,10 +102,16 @@ export default function ImplementationIndicatorCard({
             </span>
           )}
         </div>
-        <BookmarkButton
-          itemType="implementation_indicator"
-          itemId={`${sectionId}:${id}`}
-        />
+        <div className="flex gap-2 flex-shrink-0">
+          <FeedbackButton
+            itemType="implementation_indicator"
+            itemId={id.toString()}
+          />
+          <BookmarkButton
+            itemType="implementation_indicator"
+            itemId={`${sectionId}:${id}`}
+          />
+        </div>
       </div>
 
       {/* Section context */}

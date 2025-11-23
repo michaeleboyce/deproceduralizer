@@ -22,6 +22,8 @@ export default function Navigation({ breadcrumbs }: NavigationProps) {
     if (pathname === "/") return [];
     if (pathname === "/search") {
       crumbs.push({ label: "Search" });
+    } else if (pathname === "/review") {
+      crumbs.push({ label: "Review Dashboard" });
     } else if (pathname === "/bookmarks") {
       crumbs.push({ label: "Bookmarks" });
     } else if (pathname === "/reporting") {
@@ -102,6 +104,16 @@ export default function Navigation({ breadcrumbs }: NavigationProps) {
                 }`}
               >
                 Analysis
+              </Link>
+              <Link
+                href="/review"
+                className={`font-medium transition-colors ${
+                  pathname === "/review"
+                    ? "text-teal-700"
+                    : "text-slate-700 hover:text-slate-900"
+                }`}
+              >
+                Review
               </Link>
               <Link
                 href="/bookmarks"

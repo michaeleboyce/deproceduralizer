@@ -8,6 +8,7 @@ A modern, sophisticated design system for legal code documentation and analysis.
 2. **Readable & Accessible**: WCAG 2.2 AA compliance minimum, optimized for long-form reading
 3. **Modern & Clean**: Contemporary design that feels current, not dated
 4. **Hierarchical & Organized**: Clear visual hierarchy to navigate complex legal information
+5. **Light Mode Only**: This application does not support dark mode. All components use light backgrounds with dark, high-contrast text for maximum readability
 
 ---
 
@@ -343,25 +344,42 @@ max-w-2xl    /* 672px - Forms, narrow content */
 
 ### Forms & Inputs
 
+**Design Philosophy**: All form inputs must have explicit, high-contrast text colors. Never rely on browser defaults, which may result in faint or hard-to-read text. This application does not support dark mode - all inputs use light backgrounds with dark text for maximum readability.
+
 #### Text Input
 ```tsx
 <input
   type="text"
-  className="px-4 py-3 border border-slate-300 rounded-lg
-             focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent
+  className="w-full px-3 py-2 border border-slate-300 rounded-lg
+             focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500
              text-slate-900 placeholder:text-slate-400"
   placeholder="Enter search term..."
 />
 ```
 
+**IMPORTANT**: Always include `text-slate-900` for input text and `placeholder:text-slate-400` for placeholders to ensure text is clearly visible. Never rely on browser defaults.
+
+#### Textarea
+```tsx
+<textarea
+  className="w-full px-3 py-2 border border-slate-300 rounded-lg
+             focus:outline-none focus:ring-2 focus:ring-teal-500
+             text-slate-900 placeholder:text-slate-400 resize-none"
+  rows={5}
+  placeholder="Enter your text..."
+/>
+```
+
 #### Select Dropdown
 ```tsx
-<select className="px-4 py-3 border border-slate-300 rounded-lg
-                   focus:outline-none focus:ring-2 focus:ring-teal-500
+<select className="w-full px-3 py-2 border border-slate-300 rounded-lg
+                   focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500
                    text-slate-900 bg-white">
   <option>Select option</option>
 </select>
 ```
+
+**IMPORTANT**: Always include `text-slate-900 bg-white` for select elements to ensure proper text visibility and background color.
 
 #### Checkbox
 ```tsx
@@ -745,4 +763,4 @@ Comprehensive footer with 4-column grid layout:
 
 ---
 
-*Last updated: 2025-11-20*
+*Last updated: 2025-11-23*

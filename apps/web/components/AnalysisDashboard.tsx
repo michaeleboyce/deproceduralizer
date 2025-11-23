@@ -3,6 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, ArrowRight, Copy } from 'lucide-react';
+import FeedbackButton from './FeedbackButton';
+import BookmarkButton from './BookmarkButton';
 
 interface Conflict {
   sectionA: string;
@@ -87,7 +89,7 @@ export default function AnalysisDashboard() {
                   )}
                 </div>
                 <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <Link href={`/section/${item.sectionA}`} className="font-mono font-medium text-slate-900 hover:underline">
                       {item.citationA || item.sectionA}
                     </Link>
@@ -95,13 +97,23 @@ export default function AnalysisDashboard() {
                     <Link href={`/section/${item.sectionB}`} className="font-mono font-medium text-slate-900 hover:underline">
                       {item.citationB || item.sectionB}
                     </Link>
-                    <span className={`ml-auto text-xs font-medium px-2 py-1 rounded-full uppercase tracking-wide ${
-                      activeTab === 'conflicting' 
-                        ? 'bg-red-100 text-red-700' 
+                    <span className={`text-xs font-medium px-2 py-1 rounded-full uppercase tracking-wide ${
+                      activeTab === 'conflicting'
+                        ? 'bg-red-100 text-red-700'
                         : 'bg-amber-100 text-amber-700'
                     }`}>
                       {item.classification}
                     </span>
+                    <div className="ml-auto flex gap-2 flex-shrink-0">
+                      <FeedbackButton
+                        itemType="similarity_classification"
+                        itemId={`${item.sectionA}:${item.sectionB}`}
+                      />
+                      <BookmarkButton
+                        itemType={activeTab}
+                        itemId={`${item.sectionA}:${item.sectionB}`}
+                      />
+                    </div>
                   </div>
                   <p className="text-slate-700 text-sm leading-relaxed bg-slate-50 p-3 rounded border border-slate-100">
                     {item.explanation}

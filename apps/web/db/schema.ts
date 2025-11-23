@@ -318,6 +318,45 @@ export const bookmarks = pgTable("bookmarks", {
   createdAtIdx: index("idx_bookmarks_created_at").on(table.createdAt),
 }));
 
+/**
+ * Reviewer feedback on AI-generated findings for quality control and model improvement
+ */
+export const indicatorFeedback = pgTable("indicator_feedback", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+
+  // What's being reviewed
+  itemType: varchar("item_type", { length: 50 }).notNull(), // 'anachronism_indicator', 'implementation_indicator', 'similarity_classification'
+  itemId: bigint("item_id", { mode: "number" }).notNull(),
+  jurisdiction: varchar("jurisdiction", { length: 10 }).notNull().default("dc"),
+
+  // Reviewer information
+  reviewerId: varchar("reviewer_id", { length: 100 }).notNull(),
+  reviewerName: varchar("reviewer_name", { length: 255 }),
+
+  // Feedback rating
+  rating: varchar("rating", { length: 50 }).notNull(), // 'correct', 'false_positive', 'wrong_category', 'wrong_severity', 'missing_context', 'needs_refinement'
+
+  // Required explanation
+  comment: text("comment").notNull(),
+
+  // Optional corrections
+  suggestedCategory: varchar("suggested_category", { length: 100 }),
+  suggestedSeverity: varchar("suggested_severity", { length: 20 }),
+  suggestedComplexity: varchar("suggested_complexity", { length: 20 }),
+
+  // Metadata
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  itemIdx: index("idx_indicator_feedback_item").on(table.itemType, table.itemId),
+  reviewerIdx: index("idx_indicator_feedback_reviewer").on(table.reviewerId),
+  ratingIdx: index("idx_indicator_feedback_rating").on(table.rating),
+  jurisdictionIdx: index("idx_indicator_feedback_jurisdiction").on(table.jurisdiction),
+  reviewedAtIdx: index("idx_indicator_feedback_reviewed_at").on(table.reviewedAt),
+  lookupIdx: index("idx_indicator_feedback_lookup").on(table.itemType, table.itemId, table.jurisdiction),
+}));
+
 // Type exports for use in application code
 export type Jurisdiction = typeof jurisdictions.$inferSelect;
 export type NewJurisdiction = typeof jurisdictions.$inferInsert;
@@ -342,3 +381,5 @@ export type PahlkaImplementationIndicator = typeof pahlkaImplementationIndicator
 export type SectionPahlkaHighlight = typeof sectionPahlkaHighlights.$inferSelect;
 export type Bookmark = typeof bookmarks.$inferSelect;
 export type NewBookmark = typeof bookmarks.$inferInsert;
+export type IndicatorFeedback = typeof indicatorFeedback.$inferSelect;
+export type NewIndicatorFeedback = typeof indicatorFeedback.$inferInsert;
