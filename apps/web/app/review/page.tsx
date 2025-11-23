@@ -74,6 +74,7 @@ function ReviewDashboardContent() {
   const [itemTypeFilter, setItemTypeFilter] = useState("all");
   const [ratingFilter, setRatingFilter] = useState("");
   const [reviewerFilter, setReviewerFilter] = useState("");
+  const [sortBy, setSortBy] = useState("severity");
 
   useEffect(() => {
     const tab = (searchParams.get("tab") as "queue" | "reviewed" | "analytics") || "queue";
@@ -88,7 +89,7 @@ function ReviewDashboardContent() {
     } else if (activeTab === "analytics") {
       loadStats();
     }
-  }, [activeTab, itemTypeFilter, ratingFilter, reviewerFilter]);
+  }, [activeTab, itemTypeFilter, ratingFilter, reviewerFilter, sortBy]);
 
   async function loadQueue() {
     setLoading(true);
@@ -97,6 +98,7 @@ function ReviewDashboardContent() {
       if (itemTypeFilter !== "all") {
         params.append("itemType", itemTypeFilter);
       }
+      params.append("sortBy", sortBy);
       params.append("limit", "50");
 
       const response = await fetch(`/api/feedback/queue?${params.toString()}`);
@@ -263,6 +265,23 @@ function ReviewDashboardContent() {
                   <option value="similarity_classification">Conflicts</option>
                 </select>
               </div>
+
+              {activeTab === "queue" && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Sort By
+                  </label>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-slate-900 bg-white"
+                  >
+                    <option value="severity">Severity (High to Low)</option>
+                    <option value="complexity">Complexity (High to Low)</option>
+                    <option value="citation">Citation (A to Z)</option>
+                  </select>
+                </div>
+              )}
 
               {activeTab === "reviewed" && (
                 <>
