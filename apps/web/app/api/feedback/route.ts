@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     if (itemType && itemId) {
       // Get feedback for a specific item
       conditions.push(eq(indicatorFeedback.itemType, itemType));
-      conditions.push(eq(indicatorFeedback.itemId, BigInt(itemId)));
+      conditions.push(eq(indicatorFeedback.itemId, Number(itemId)));
       conditions.push(eq(indicatorFeedback.jurisdiction, jurisdiction));
     } else if (reviewerId) {
       // Get all feedback by reviewer
@@ -170,7 +170,7 @@ export async function POST(request: NextRequest) {
       .where(
         and(
           eq(indicatorFeedback.itemType, body.itemType),
-          eq(indicatorFeedback.itemId, BigInt(body.itemId)),
+          eq(indicatorFeedback.itemId, Number(body.itemId)),
           eq(indicatorFeedback.reviewerId, body.reviewerId),
           eq(indicatorFeedback.jurisdiction, jurisdiction)
         )
@@ -200,7 +200,7 @@ export async function POST(request: NextRequest) {
         .insert(indicatorFeedback)
         .values({
           itemType: body.itemType,
-          itemId: BigInt(body.itemId),
+          itemId: Number(body.itemId),
           jurisdiction,
           reviewerId: body.reviewerId,
           reviewerName: body.reviewerName || null,
@@ -252,7 +252,7 @@ export async function DELETE(request: NextRequest) {
 
     await db
       .delete(indicatorFeedback)
-      .where(eq(indicatorFeedback.id, BigInt(id)));
+      .where(eq(indicatorFeedback.id, Number(id)));
 
     return NextResponse.json({ success: true });
   } catch (error) {
