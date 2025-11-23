@@ -47,6 +47,12 @@ export async function GET(request: NextRequest) {
     if (itemType === "all" || itemType === "anachronism_indicator") {
       const reviewedIds = await getReviewedIds("anachronism_indicator");
 
+      // Build where conditions
+      const whereConditions = [eq(anachronismIndicators.jurisdiction, jurisdiction)];
+      if (reviewedIds.length > 0) {
+        whereConditions.push(notInArray(anachronismIndicators.id, reviewedIds));
+      }
+
       let query = db
         .select({
           id: anachronismIndicators.id,
@@ -70,11 +76,7 @@ export async function GET(request: NextRequest) {
             eq(anachronismIndicators.jurisdiction, sections.jurisdiction)
           )
         )
-        .where(eq(anachronismIndicators.jurisdiction, jurisdiction));
-
-      if (reviewedIds.length > 0) {
-        query = query.where(notInArray(anachronismIndicators.id, reviewedIds));
-      }
+        .where(and(...whereConditions));
 
       // Apply sorting
       if (sortBy === "severity") {
@@ -97,6 +99,12 @@ export async function GET(request: NextRequest) {
     // Fetch unreviewed implementation indicators
     if (itemType === "all" || itemType === "implementation_indicator") {
       const reviewedIds = await getReviewedIds("implementation_indicator");
+
+      // Build where conditions
+      const whereConditions = [eq(pahlkaImplementationIndicators.jurisdiction, jurisdiction)];
+      if (reviewedIds.length > 0) {
+        whereConditions.push(notInArray(pahlkaImplementationIndicators.id, reviewedIds));
+      }
 
       let query = db
         .select({
@@ -121,13 +129,7 @@ export async function GET(request: NextRequest) {
             eq(pahlkaImplementationIndicators.jurisdiction, sections.jurisdiction)
           )
         )
-        .where(eq(pahlkaImplementationIndicators.jurisdiction, jurisdiction));
-
-      if (reviewedIds.length > 0) {
-        query = query.where(
-          notInArray(pahlkaImplementationIndicators.id, reviewedIds)
-        );
-      }
+        .where(and(...whereConditions));
 
       // Apply sorting
       if (sortBy === "complexity") {
