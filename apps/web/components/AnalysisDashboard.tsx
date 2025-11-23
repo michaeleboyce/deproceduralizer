@@ -110,7 +110,7 @@ export default function AnalysisDashboard() {
                         itemId={`${item.sectionA}:${item.sectionB}`}
                       />
                       <BookmarkButton
-                        itemType={activeTab}
+                        itemType={activeTab === 'conflicting' ? 'conflict' : 'duplicate'}
                         itemId={`${item.sectionA}:${item.sectionB}`}
                       />
                     </div>
