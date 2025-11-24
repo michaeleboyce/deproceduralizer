@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sections, sectionTags, globalTags } from "@/db/schema";
 import { sql, and, eq, SQL, or, like } from "drizzle-orm";
+import { getCurrentJurisdiction } from "@/lib/config";
 
 /**
  * Reporting Requirements API endpoint
@@ -19,8 +20,7 @@ export async function GET(request: Request) {
     const searchQuery = searchParams.get("searchQuery");
     const sortBy = searchParams.get("sortBy") || "citation"; // citation | titleLabel | heading
 
-    // Hardcode jurisdiction to 'dc' for now (transparent to user)
-    const jurisdiction = 'dc';
+    const jurisdiction = getCurrentJurisdiction();
 
     // Build WHERE conditions dynamically
     const whereConditions: SQL[] = [];

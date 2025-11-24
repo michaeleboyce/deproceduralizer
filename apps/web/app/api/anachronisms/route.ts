@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { getCurrentJurisdiction } from "@/lib/config";
 
 /**
  * Anachronisms API endpoint
@@ -20,12 +21,11 @@ export async function GET(request: Request) {
     const searchQuery = searchParams.get("searchQuery");
     const sortBy = searchParams.get("sortBy") || "severity"; // severity | citation | heading
 
-    // Hardcode jurisdiction to 'dc' for now
-    const jurisdiction = 'dc';
+    const jurisdiction = getCurrentJurisdiction();
 
     // Build WHERE conditions dynamically
     const whereConditions: any[] = [];
-    whereConditions.push(sql`sa.jurisdiction = 'dc'`);
+    whereConditions.push(sql`sa.jurisdiction = ${jurisdiction}`);
     whereConditions.push(sql`sa.has_anachronism = true`);
 
     if (severity && severity.trim()) {
@@ -52,7 +52,7 @@ export async function GET(request: Request) {
 
     // If category filter is specified, join with indicators
     const categoryJoinClause = category && category.trim()
-      ? sql`INNER JOIN anachronism_indicators ai ON ai.jurisdiction = 'dc' AND ai.section_id = sa.section_id AND ai.category = ${category}`
+      ? sql`INNER JOIN anachronism_indicators ai ON ai.jurisdiction = ${jurisdiction} AND ai.section_id = sa.section_id AND ai.category = ${category}`
       : sql``;
 
     // Build WHERE clause
@@ -105,7 +105,7 @@ export async function GET(request: Request) {
               END
           ) as indicators
         FROM anachronism_indicators ai
-        WHERE ai.jurisdiction = 'dc'
+        WHERE ai.jurisdiction = ${jurisdiction}
         GROUP BY ai.jurisdiction, ai.section_id
       )
       SELECT
@@ -148,7 +148,7 @@ export async function GET(request: Request) {
       SELECT DISTINCT ai.category, COUNT(*)::int as count
       FROM anachronism_indicators ai
       INNER JOIN section_anachronisms sa ON sa.jurisdiction = ai.jurisdiction AND sa.section_id = ai.section_id
-      WHERE ai.jurisdiction = 'dc' AND sa.has_anachronism = true
+      WHERE ai.jurisdiction = ${jurisdiction} AND sa.has_anachronism = true
       GROUP BY ai.category
       ORDER BY ai.category
     `;
@@ -162,7 +162,7 @@ export async function GET(request: Request) {
         overall_severity as severity,
         COUNT(*)::int as count
       FROM section_anachronisms
-      WHERE jurisdiction = 'dc' AND has_anachronism = true
+      WHERE jurisdiction = ${jurisdiction} AND has_anachronism = true
       GROUP BY overall_severity
       ORDER BY
         CASE overall_severity

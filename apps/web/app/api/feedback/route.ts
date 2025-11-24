@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { indicatorFeedback } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
+import { validateJurisdiction } from "@/lib/config";
 
 /**
  * GET handler for retrieving feedback
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const itemType = searchParams.get("itemType");
     const itemId = searchParams.get("itemId");
-    const jurisdiction = searchParams.get("jurisdiction") || "dc";
+    const jurisdiction = validateJurisdiction(searchParams.get("jurisdiction"));
     const reviewerId = searchParams.get("reviewerId");
     const rating = searchParams.get("rating");
     const includeContext = searchParams.get("includeContext") === "true";
@@ -161,7 +162,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const jurisdiction = body.jurisdiction || "dc";
+    const jurisdiction = validateJurisdiction(body.jurisdiction);
 
     // Check if feedback already exists for this reviewer/item combination
     const existingFeedback = await db

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sections } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { getCurrentJurisdiction } from "@/lib/config";
 
 /**
  * GET handler for a single section by ID
@@ -13,8 +14,7 @@ export async function GET(
   try {
     const { id } = await params;
 
-    // Hardcode jurisdiction to 'dc' for now (transparent to user)
-    const jurisdiction = 'dc';
+    const jurisdiction = getCurrentJurisdiction();
 
     const [section] = await db
       .select({

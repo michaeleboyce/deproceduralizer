@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/db";
+import { getCurrentJurisdiction } from "@/lib/config";
 import {
   sections,
   sectionDeadlines,
@@ -67,8 +68,7 @@ export default async function SectionPage({
 }) {
   const { id } = await params;
 
-  // Hardcode jurisdiction to 'dc' for now (transparent to user)
-  const jurisdiction = 'dc';
+  const jurisdiction = getCurrentJurisdiction();
 
   // Fetch section data
   const [section] = await db

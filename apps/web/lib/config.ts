@@ -19,3 +19,14 @@ export const config = {
 export function getCurrentJurisdiction(): string {
     return config.jurisdiction.default;
 }
+
+/**
+ * Validate and normalize a jurisdiction value.
+ * Returns the default jurisdiction if the input is invalid or unsupported.
+ */
+export function validateJurisdiction(jurisdiction: string | null | undefined): string {
+    if (jurisdiction && config.jurisdiction.supported.includes(jurisdiction)) {
+        return jurisdiction;
+    }
+    return config.jurisdiction.default;
+}

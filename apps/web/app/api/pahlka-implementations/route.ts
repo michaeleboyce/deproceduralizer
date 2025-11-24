@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { getCurrentJurisdiction } from "@/lib/config";
 
 /**
  * Pahlka Implementation Analysis API endpoint
@@ -20,12 +21,11 @@ export async function GET(request: Request) {
     const searchQuery = searchParams.get("searchQuery");
     const sortBy = searchParams.get("sortBy") || "complexity"; // complexity | citation | heading
 
-    // Hardcode jurisdiction to 'dc' for now
-    const jurisdiction = 'dc';
+    const jurisdiction = getCurrentJurisdiction();
 
     // Build WHERE conditions dynamically
     const whereConditions: any[] = [];
-    whereConditions.push(sql`pi.jurisdiction = 'dc'`);
+    whereConditions.push(sql`pi.jurisdiction = ${jurisdiction}`);
     whereConditions.push(sql`pi.has_implementation_issues = true`);
 
     if (complexity && complexity.trim()) {
@@ -110,7 +110,7 @@ export async function GET(request: Request) {
               END
           ) as indicators
         FROM pahlka_implementation_indicators pii
-        WHERE pii.jurisdiction = 'dc'
+        WHERE pii.jurisdiction = ${jurisdiction}
         GROUP BY pii.jurisdiction, pii.section_id
       )
       SELECT
@@ -151,7 +151,7 @@ export async function GET(request: Request) {
       SELECT DISTINCT pii.category, COUNT(*)::int as count
       FROM pahlka_implementation_indicators pii
       INNER JOIN section_pahlka_implementations pi ON pi.jurisdiction = pii.jurisdiction AND pi.section_id = pii.section_id
-      WHERE pii.jurisdiction = 'dc' AND pi.has_implementation_issues = true
+      WHERE pii.jurisdiction = ${jurisdiction} AND pi.has_implementation_issues = true
       GROUP BY pii.category
       ORDER BY pii.category
     `;
@@ -165,7 +165,7 @@ export async function GET(request: Request) {
         overall_complexity as complexity,
         COUNT(*)::int as count
       FROM section_pahlka_implementations
-      WHERE jurisdiction = 'dc' AND has_implementation_issues = true
+      WHERE jurisdiction = ${jurisdiction} AND has_implementation_issues = true
       GROUP BY overall_complexity
       ORDER BY
         CASE overall_complexity
@@ -184,7 +184,7 @@ export async function GET(request: Request) {
         COUNT(*) FILTER (WHERE requires_technical_review = true)::int as requires_review,
         COUNT(*)::int as total
       FROM section_pahlka_implementations
-      WHERE jurisdiction = 'dc' AND has_implementation_issues = true
+      WHERE jurisdiction = ${jurisdiction} AND has_implementation_issues = true
     `;
 
     const technicalReviewStatsResult = await db.execute(technicalReviewStatsSql);

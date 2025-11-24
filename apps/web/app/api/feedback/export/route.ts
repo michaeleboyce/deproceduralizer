@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { indicatorFeedback } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
+import { validateJurisdiction } from "@/lib/config";
 
 /**
  * GET handler for exporting feedback data
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const format = searchParams.get("format") || "json";
-    const jurisdiction = searchParams.get("jurisdiction") || "dc";
+    const jurisdiction = validateJurisdiction(searchParams.get("jurisdiction"));
     const itemType = searchParams.get("itemType");
     const rating = searchParams.get("rating");
     const reviewerId = searchParams.get("reviewerId");

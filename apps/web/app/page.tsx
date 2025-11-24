@@ -4,14 +4,17 @@ import { sql } from "drizzle-orm";
 import { AlertTriangle, Clock, Settings, Calendar } from "lucide-react";
 import SearchBar from "@/components/SearchBar";
 import Navigation from "@/components/Navigation";
+import { getCurrentJurisdiction } from "@/lib/config";
 
 async function getAnalysisStats() {
+  const jurisdiction = getCurrentJurisdiction();
+
   try {
     // Get conflict counts
     const conflictsResult = await db.execute(sql`
       SELECT classification, COUNT(*) as count
       FROM section_similarity_classifications
-      WHERE jurisdiction = 'dc'
+      WHERE jurisdiction = ${jurisdiction}
       GROUP BY classification
     `);
 
@@ -28,7 +31,7 @@ async function getAnalysisStats() {
         COUNT(*) FILTER (WHERE overall_severity = 'CRITICAL') as critical,
         COUNT(*) FILTER (WHERE overall_severity = 'HIGH') as high
       FROM section_anachronisms
-      WHERE jurisdiction = 'dc'
+      WHERE jurisdiction = ${jurisdiction}
     `);
 
     const anachronisms = anachronismsResult.rows[0] as any;
@@ -40,7 +43,7 @@ async function getAnalysisStats() {
         COUNT(*) FILTER (WHERE requires_technical_review = true) as technical_review,
         COUNT(*) FILTER (WHERE overall_complexity = 'HIGH') as high_complexity
       FROM section_pahlka_implementations
-      WHERE jurisdiction = 'dc'
+      WHERE jurisdiction = ${jurisdiction}
     `);
 
     const pahlka = pahlkaResult.rows[0] as any;
@@ -49,7 +52,7 @@ async function getAnalysisStats() {
     const reportingResult = await db.execute(sql`
       SELECT COUNT(*) as count
       FROM sections
-      WHERE jurisdiction = 'dc' AND has_reporting = true
+      WHERE jurisdiction = ${jurisdiction} AND has_reporting = true
     `);
 
     const reporting = parseInt((reportingResult.rows[0] as any)?.count || '0');
@@ -58,7 +61,7 @@ async function getAnalysisStats() {
     const sectionsResult = await db.execute(sql`
       SELECT COUNT(*) as count
       FROM sections
-      WHERE jurisdiction = 'dc'
+      WHERE jurisdiction = ${jurisdiction}
     `);
 
     const totalSections = parseInt((sectionsResult.rows[0] as any)?.count || '0');

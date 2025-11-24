@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { indicatorFeedback } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
+import { validateJurisdiction } from "@/lib/config";
 
 /**
  * GET handler for feedback statistics
@@ -12,7 +13,7 @@ import { eq, sql } from "drizzle-orm";
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const jurisdiction = searchParams.get("jurisdiction") || "dc";
+    const jurisdiction = validateJurisdiction(searchParams.get("jurisdiction"));
     const itemType = searchParams.get("itemType");
 
     // Build WHERE clause

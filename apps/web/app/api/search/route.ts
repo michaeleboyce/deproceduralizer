@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sections, sectionSimilarities, sectionSimilarityClassifications, obligations } from "@/db/schema";
 import { sql, and, eq, SQL, gte, lte, or } from "drizzle-orm";
+import { extractCommonParams } from "@/lib/api/utils";
 
 /**
  * Search API endpoint
@@ -28,11 +29,15 @@ export async function GET(request: Request) {
     const implementationComplexity = searchParams.get("implementationComplexity");
     const hasAnachronisms = searchParams.get("hasAnachronisms") === "true";
     const anachronismSeverity = searchParams.get("anachronismSeverity");
-    const page = parseInt(searchParams.get("page") || "1", 10);
-    const limit = parseInt(searchParams.get("limit") || "20", 10);
+    const pageParam = parseInt(searchParams.get("page") || "1", 10);
+    const limitParam = parseInt(searchParams.get("limit") || "20", 10);
 
-    // Hardcode jurisdiction to 'dc' for now (transparent to user)
-    const jurisdiction = 'dc';
+    // Use centralized jurisdiction handling
+    const { jurisdiction, limit, page } = {
+      ...extractCommonParams(searchParams),
+      limit: limitParam,
+      page: pageParam,
+    };
 
     // Calculate offset for pagination
     const offset = (page - 1) * limit;
