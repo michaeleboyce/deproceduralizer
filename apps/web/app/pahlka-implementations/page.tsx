@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Navigation from "@/components/Navigation";
 import ImplementationIndicatorCard from "@/components/ImplementationIndicatorCard";
 import { Suspense } from "react";
+import { useFilters, useApiData } from "@/hooks";
 
 interface ImplementationIndicator {
   id: number;
@@ -14,13 +15,11 @@ interface ImplementationIndicator {
   effortEstimate: string | null;
   explanation: string;
   matchedPhrases: string[];
-  // Section context
   sectionId: string;
   citation: string;
   heading: string;
   titleLabel: string;
   chapterLabel: string;
-  // Parent analysis
   overallComplexity: string | null;
   requiresTechnicalReview: boolean;
   summary: string | null;
@@ -47,52 +46,29 @@ function PahlkaImplementationsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // State
-  const [results, setResults] = useState<ImplementationIndicator[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [total, setTotal] = useState(0);
+  // Use shared hooks
+  const filters = useFilters();
+  const api = useApiData<ImplementationResponse>();
 
-  // Filter state
+  // Implementation-specific filter state
   const [selectedComplexity, setSelectedComplexity] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
-  const [selectedTitle, setSelectedTitle] = useState("");
-  const [selectedChapter, setSelectedChapter] = useState("");
   const [requiresTechnicalReview, setRequiresTechnicalReview] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("complexity");
 
-  // Applied filters
-  const [appliedComplexity, setAppliedComplexity] = useState("");
-  const [appliedCategory, setAppliedCategory] = useState("");
-  const [appliedTitle, setAppliedTitle] = useState("");
-  const [appliedChapter, setAppliedChapter] = useState("");
-  const [appliedRequiresTechnicalReview, setAppliedRequiresTechnicalReview] = useState(false);
-  const [appliedSearchQuery, setAppliedSearchQuery] = useState("");
-  const [appliedSortBy, setAppliedSortBy] = useState("complexity");
+  // Track applied filters for "Clear Filters" button
+  const [appliedFilters, setAppliedFilters] = useState({
+    complexity: "",
+    category: "",
+    title: "",
+    chapter: "",
+    requiresTechnicalReview: false,
+    searchQuery: "",
+    sortBy: "complexity",
+  });
 
-  // Available options
-  const [allCategories, setAllCategories] = useState<Array<{ category: string; count: number }>>([]);
-  const [complexityDistribution, setComplexityDistribution] = useState<Array<{ complexity: string; count: number }>>([]);
-  const [availableTitles, setAvailableTitles] = useState<string[]>([]);
-  const [availableChapters, setAvailableChapters] = useState<string[]>([]);
-
-  // Load titles on mount
-  useEffect(() => {
-    loadTitles();
-  }, []);
-
-  // Load chapters when title changes
-  useEffect(() => {
-    if (selectedTitle) {
-      loadChapters(selectedTitle);
-    } else {
-      setAvailableChapters([]);
-      setSelectedChapter("");
-    }
-  }, [selectedTitle]);
-
-  // Auto-load from URL params
+  // Auto-load from URL params on mount
   useEffect(() => {
     const urlComplexity = searchParams.get("complexity") || "";
     const urlCategory = searchParams.get("category") || "";
@@ -102,93 +78,57 @@ function PahlkaImplementationsPageContent() {
     const urlSearchQuery = searchParams.get("searchQuery") || "";
     const urlSortBy = searchParams.get("sortBy") || "complexity";
 
+    // Set form state
     setSelectedComplexity(urlComplexity);
     setSelectedCategory(urlCategory);
-    setSelectedTitle(urlTitle);
-    setSelectedChapter(urlChapter);
+    filters.setSelectedTitle(urlTitle);
+    filters.setSelectedChapter(urlChapter);
     setRequiresTechnicalReview(urlRequiresTechnicalReview);
     setSearchQuery(urlSearchQuery);
     setSortBy(urlSortBy);
 
-    setAppliedComplexity(urlComplexity);
-    setAppliedCategory(urlCategory);
-    setAppliedTitle(urlTitle);
-    setAppliedChapter(urlChapter);
-    setAppliedRequiresTechnicalReview(urlRequiresTechnicalReview);
-    setAppliedSearchQuery(urlSearchQuery);
-    setAppliedSortBy(urlSortBy);
+    // Track applied filters
+    setAppliedFilters({
+      complexity: urlComplexity,
+      category: urlCategory,
+      title: urlTitle,
+      chapter: urlChapter,
+      requiresTechnicalReview: urlRequiresTechnicalReview,
+      searchQuery: urlSearchQuery,
+      sortBy: urlSortBy,
+    });
 
-    fetchImplementationData(urlComplexity, urlCategory, urlTitle, urlChapter, urlRequiresTechnicalReview, urlSearchQuery, urlSortBy);
+    // Fetch data
+    fetchData(urlComplexity, urlCategory, urlTitle, urlChapter, urlRequiresTechnicalReview, urlSearchQuery, urlSortBy);
   }, [searchParams]);
 
-  const loadTitles = async () => {
-    try {
-      const response = await fetch("/api/filters/titles");
-      const data = await response.json();
-      setAvailableTitles(data.titles || []);
-    } catch (err) {
-      console.error("Failed to load titles:", err);
-    }
-  };
-
-  const loadChapters = async (title: string) => {
-    try {
-      const response = await fetch(`/api/filters/chapters?title=${encodeURIComponent(title)}`);
-      const data = await response.json();
-      setAvailableChapters(data.chapters || []);
-    } catch (err) {
-      console.error("Failed to load chapters:", err);
-    }
-  };
-
-  const fetchImplementationData = async (
-    complexity: string = selectedComplexity,
-    category: string = selectedCategory,
-    title: string = selectedTitle,
-    chapter: string = selectedChapter,
-    requiresReview: boolean = requiresTechnicalReview,
-    search: string = searchQuery,
-    sort: string = sortBy
+  const fetchData = useCallback(async (
+    complexity: string,
+    category: string,
+    title: string,
+    chapter: string,
+    requiresReview: boolean,
+    search: string,
+    sort: string
   ) => {
-    setLoading(true);
-    setError(null);
+    const params = new URLSearchParams();
+    if (complexity) params.append("complexity", complexity);
+    if (category) params.append("category", category);
+    if (title) params.append("title", title);
+    if (chapter) params.append("chapter", chapter);
+    if (requiresReview) params.append("requiresTechnicalReview", "true");
+    if (search) params.append("searchQuery", search);
+    params.append("sortBy", sort);
 
-    try {
-      const params = new URLSearchParams();
-      if (complexity) params.append("complexity", complexity);
-      if (category) params.append("category", category);
-      if (title) params.append("title", title);
-      if (chapter) params.append("chapter", chapter);
-      if (requiresReview) params.append("requiresTechnicalReview", "true");
-      if (search) params.append("searchQuery", search);
-      params.append("sortBy", sort);
-
-      const url = `/api/pahlka-implementation-indicators?${params.toString()}`;
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data: ImplementationResponse = await response.json();
-      setResults(data.results);
-      setTotal(data.total);
-      setAllCategories(data.allCategories);
-      setComplexityDistribution(data.complexityDistribution);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-      console.error("Error fetching implementation data:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    await api.fetchData("/api/pahlka-implementation-indicators", params);
+  }, [api]);
 
   const applyFilters = () => {
     const params = new URLSearchParams();
     if (selectedComplexity) params.append("complexity", selectedComplexity);
     if (selectedCategory) params.append("category", selectedCategory);
-    if (selectedTitle) params.append("title", selectedTitle);
-    if (selectedChapter) params.append("chapter", selectedChapter);
+    if (filters.selectedTitle) params.append("title", filters.selectedTitle);
+    if (filters.selectedChapter) params.append("chapter", filters.selectedChapter);
     if (requiresTechnicalReview) params.append("requiresTechnicalReview", "true");
     if (searchQuery) params.append("searchQuery", searchQuery);
     params.append("sortBy", sortBy);
@@ -199,41 +139,26 @@ function PahlkaImplementationsPageContent() {
   const clearFilters = () => {
     setSelectedComplexity("");
     setSelectedCategory("");
-    setSelectedTitle("");
-    setSelectedChapter("");
+    filters.clearFilters();
     setRequiresTechnicalReview(false);
     setSearchQuery("");
     setSortBy("complexity");
     router.push("/pahlka-implementations");
   };
 
-  function getComplexityColor(complexity: string): string {
-    switch (complexity) {
-      case "HIGH":
-        return "text-red-600";
-      case "MEDIUM":
-        return "text-yellow-600";
-      case "LOW":
-        return "text-blue-600";
-      default:
-        return "text-gray-600";
-    }
-  }
-
-  function formatCategoryName(category: string): string {
-    return category
-      .split("_")
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(" ");
-  }
+  // Derived state
+  const results = api.data?.results || [];
+  const total = api.data?.total || 0;
+  const allCategories = api.data?.allCategories || [];
+  const complexityDistribution = api.data?.complexityDistribution || [];
 
   const hasActiveFilters =
-    appliedComplexity ||
-    appliedCategory ||
-    appliedTitle ||
-    appliedChapter ||
-    appliedRequiresTechnicalReview ||
-    appliedSearchQuery;
+    appliedFilters.complexity ||
+    appliedFilters.category ||
+    appliedFilters.title ||
+    appliedFilters.chapter ||
+    appliedFilters.requiresTechnicalReview ||
+    appliedFilters.searchQuery;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -251,22 +176,13 @@ function PahlkaImplementationsPageContent() {
 
         {/* Stats Dashboard */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          {/* Total indicators */}
           <div className="bg-white rounded-lg shadow p-6">
-            <div className="text-sm font-medium text-gray-600 mb-1">
-              Total Issues
-            </div>
-            <div className="text-3xl font-bold text-gray-900">
-              {total.toLocaleString()}
-            </div>
+            <div className="text-sm font-medium text-gray-600 mb-1">Total Issues</div>
+            <div className="text-3xl font-bold text-gray-900">{total.toLocaleString()}</div>
           </div>
-
-          {/* Complexity distribution */}
           {complexityDistribution.map((dist) => (
             <div key={dist.complexity} className="bg-white rounded-lg shadow p-6">
-              <div className="text-sm font-medium text-gray-600 mb-1">
-                {dist.complexity} Complexity
-              </div>
+              <div className="text-sm font-medium text-gray-600 mb-1">{dist.complexity} Complexity</div>
               <div className={`text-3xl font-bold ${getComplexityColor(dist.complexity)}`}>
                 {dist.count.toLocaleString()}
               </div>
@@ -282,9 +198,7 @@ function PahlkaImplementationsPageContent() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             {/* Complexity filter */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Complexity
-              </label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Complexity</label>
               <select
                 value={selectedComplexity}
                 onChange={(e) => setSelectedComplexity(e.target.value)}
@@ -299,9 +213,7 @@ function PahlkaImplementationsPageContent() {
 
             {/* Category filter */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Category
-              </label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Category</label>
               <select
                 value={selectedCategory}
                 onChange={(e) => setSelectedCategory(e.target.value)}
@@ -316,50 +228,40 @@ function PahlkaImplementationsPageContent() {
               </select>
             </div>
 
-            {/* Title filter */}
+            {/* Title filter - using shared hook */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Title
-              </label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Title</label>
               <select
-                value={selectedTitle}
-                onChange={(e) => setSelectedTitle(e.target.value)}
+                value={filters.selectedTitle}
+                onChange={(e) => filters.setTitle(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-slate-900"
               >
                 <option value="">All Titles</option>
-                {availableTitles.map((title) => (
-                  <option key={title} value={title}>
-                    {title}
-                  </option>
+                {filters.availableTitles.map((title) => (
+                  <option key={title} value={title}>{title}</option>
                 ))}
               </select>
             </div>
 
-            {/* Chapter filter */}
+            {/* Chapter filter - using shared hook */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Chapter
-              </label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Chapter</label>
               <select
-                value={selectedChapter}
-                onChange={(e) => setSelectedChapter(e.target.value)}
-                disabled={!selectedTitle}
+                value={filters.selectedChapter}
+                onChange={(e) => filters.setChapter(e.target.value)}
+                disabled={!filters.selectedTitle}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
               >
                 <option value="">All Chapters</option>
-                {availableChapters.map((chapter) => (
-                  <option key={chapter} value={chapter}>
-                    {chapter}
-                  </option>
+                {filters.availableChapters.map((chapter) => (
+                  <option key={chapter} value={chapter}>{chapter}</option>
                 ))}
               </select>
             </div>
 
             {/* Sort by */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Sort By
-              </label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Sort By</label>
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
@@ -375,9 +277,7 @@ function PahlkaImplementationsPageContent() {
           {/* Search and checkboxes */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Search
-              </label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Search</label>
               <input
                 type="text"
                 value={searchQuery}
@@ -386,7 +286,6 @@ function PahlkaImplementationsPageContent() {
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-slate-900 placeholder:text-slate-400"
               />
             </div>
-
             <div className="flex items-end">
               <label className="flex items-center space-x-2 cursor-pointer">
                 <input
@@ -395,9 +294,7 @@ function PahlkaImplementationsPageContent() {
                   onChange={(e) => setRequiresTechnicalReview(e.target.checked)}
                   className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
                 />
-                <span className="text-sm text-slate-700">
-                  Requires Technical Review
-                </span>
+                <span className="text-sm text-slate-700">Requires Technical Review</span>
               </label>
             </div>
           </div>
@@ -429,25 +326,25 @@ function PahlkaImplementationsPageContent() {
             </h2>
           </div>
 
-          {loading && (
+          {api.loading && (
             <div className="px-6 py-12 text-center text-gray-500">
               Loading implementation analysis...
             </div>
           )}
 
-          {error && (
+          {api.error && (
             <div className="px-6 py-12 text-center text-red-600">
-              Error: {error}
+              Error: {api.error}
             </div>
           )}
 
-          {!loading && !error && results.length === 0 && (
+          {!api.loading && !api.error && results.length === 0 && (
             <div className="px-6 py-12 text-center text-gray-500">
               No implementation issues found matching your filters.
             </div>
           )}
 
-          {!loading && !error && results.length > 0 && (
+          {!api.loading && !api.error && results.length > 0 && (
             <div className="p-6 space-y-4">
               {results.map((indicator) => (
                 <ImplementationIndicatorCard key={indicator.id} {...indicator} />
@@ -458,6 +355,23 @@ function PahlkaImplementationsPageContent() {
       </div>
     </div>
   );
+}
+
+// Helper functions
+function getComplexityColor(complexity: string): string {
+  switch (complexity) {
+    case "HIGH": return "text-red-600";
+    case "MEDIUM": return "text-yellow-600";
+    case "LOW": return "text-blue-600";
+    default: return "text-gray-600";
+  }
+}
+
+function formatCategoryName(category: string): string {
+  return category
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 export default function PahlkaImplementationsPage() {
