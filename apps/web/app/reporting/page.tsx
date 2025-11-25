@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Navigation from "@/components/Navigation";
 import BookmarkButton from "@/components/BookmarkButton";
 import { Suspense } from "react";
+import { useFilters, useApiData } from "@/hooks";
 
 interface ReportingSection {
   id: string;
@@ -34,50 +35,28 @@ function ReportingPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // State
-  const [results, setResults] = useState<ReportingSection[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [total, setTotal] = useState(0);
+  // Use shared hooks
+  const filters = useFilters();
+  const api = useApiData<ReportingResponse>();
 
-  // Filter state (what user is currently selecting)
+  // Reporting-specific filter state
   const [selectedTag, setSelectedTag] = useState("");
-  const [selectedTitle, setSelectedTitle] = useState("");
-  const [selectedChapter, setSelectedChapter] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("citation");
   const [viewMode, setViewMode] = useState<"cards" | "grouped">("cards");
 
-  // Applied filters (what's actually in the URL and active)
-  const [appliedTag, setAppliedTag] = useState("");
-  const [appliedTitle, setAppliedTitle] = useState("");
-  const [appliedChapter, setAppliedChapter] = useState("");
-  const [appliedSearchQuery, setAppliedSearchQuery] = useState("");
-
-  // Available options
-  const [allTags, setAllTags] = useState<string[]>([]);
-  const [availableTitles, setAvailableTitles] = useState<string[]>([]);
-  const [availableChapters, setAvailableChapters] = useState<string[]>([]);
+  // Track applied filters for "Clear Filters" button
+  const [appliedFilters, setAppliedFilters] = useState({
+    tag: "",
+    title: "",
+    chapter: "",
+    searchQuery: "",
+  });
 
   // Grouped view state
   const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set());
 
-  // Load titles on mount
-  useEffect(() => {
-    loadTitles();
-  }, []);
-
-  // Load chapters when title changes
-  useEffect(() => {
-    if (selectedTitle) {
-      loadChapters(selectedTitle);
-    } else {
-      setAvailableChapters([]);
-      setSelectedChapter("");
-    }
-  }, [selectedTitle]);
-
-  // Auto-load from URL params
+  // Auto-load from URL params on mount
   useEffect(() => {
     const urlTag = searchParams.get("tag") || "";
     const urlTitle = searchParams.get("title") || "";
@@ -86,84 +65,48 @@ function ReportingPageContent() {
     const urlSortBy = searchParams.get("sortBy") || "citation";
     const urlViewMode = (searchParams.get("viewMode") || "cards") as "cards" | "grouped";
 
-    // Set both selected (for form) and applied (for display)
+    // Set form state
     setSelectedTag(urlTag);
-    setSelectedTitle(urlTitle);
-    setSelectedChapter(urlChapter);
+    filters.setSelectedTitle(urlTitle);
+    filters.setSelectedChapter(urlChapter);
     setSearchQuery(urlSearchQuery);
     setSortBy(urlSortBy);
     setViewMode(urlViewMode);
 
-    setAppliedTag(urlTag);
-    setAppliedTitle(urlTitle);
-    setAppliedChapter(urlChapter);
-    setAppliedSearchQuery(urlSearchQuery);
+    // Track applied filters
+    setAppliedFilters({
+      tag: urlTag,
+      title: urlTitle,
+      chapter: urlChapter,
+      searchQuery: urlSearchQuery,
+    });
 
-    fetchReportingData(urlTag, urlTitle, urlChapter, urlSearchQuery, urlSortBy);
+    // Fetch data
+    fetchData(urlTag, urlTitle, urlChapter, urlSearchQuery, urlSortBy);
   }, [searchParams]);
 
-  const loadTitles = async () => {
-    try {
-      const response = await fetch("/api/filters/titles");
-      const data = await response.json();
-      setAvailableTitles(data.titles || []);
-    } catch (err) {
-      console.error("Failed to load titles:", err);
-    }
-  };
-
-  const loadChapters = async (title: string) => {
-    try {
-      const response = await fetch(
-        `/api/filters/chapters?title=${encodeURIComponent(title)}`
-      );
-      const data = await response.json();
-      setAvailableChapters(data.chapters || []);
-    } catch (err) {
-      console.error("Failed to load chapters:", err);
-    }
-  };
-
-  const fetchReportingData = async (
-    tag: string = selectedTag,
-    title: string = selectedTitle,
-    chapter: string = selectedChapter,
-    search: string = searchQuery,
-    sort: string = sortBy
+  const fetchData = useCallback(async (
+    tag: string,
+    title: string,
+    chapter: string,
+    search: string,
+    sort: string
   ) => {
-    setLoading(true);
-    setError(null);
+    const params = new URLSearchParams();
+    if (tag) params.append("tag", tag);
+    if (title) params.append("title", title);
+    if (chapter) params.append("chapter", chapter);
+    if (search) params.append("searchQuery", search);
+    params.append("sortBy", sort);
 
-    try {
-      const params = new URLSearchParams();
-      if (tag) params.append("tag", tag);
-      if (title) params.append("title", title);
-      if (chapter) params.append("chapter", chapter);
-      if (search) params.append("searchQuery", search);
-      params.append("sortBy", sort);
-
-      const response = await fetch(`/api/reporting?${params.toString()}`);
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch reporting requirements");
-      }
-
-      const data: ReportingResponse = await response.json();
-      setResults(data.results);
-      setTotal(data.total);
-      setAllTags(data.allTags);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
-    } finally {
-      setLoading(false);
-    }
-  };
+    await api.fetchData("/api/reporting", params);
+  }, [api]);
 
   const updateFilters = () => {
     const params = new URLSearchParams();
     if (selectedTag) params.append("tag", selectedTag);
-    if (selectedTitle) params.append("title", selectedTitle);
-    if (selectedChapter) params.append("chapter", selectedChapter);
+    if (filters.selectedTitle) params.append("title", filters.selectedTitle);
+    if (filters.selectedChapter) params.append("chapter", filters.selectedChapter);
     if (searchQuery) params.append("searchQuery", searchQuery);
     if (sortBy !== "citation") params.append("sortBy", sortBy);
     if (viewMode !== "cards") params.append("viewMode", viewMode);
@@ -173,14 +116,22 @@ function ReportingPageContent() {
 
   const clearFilters = () => {
     setSelectedTag("");
-    setSelectedTitle("");
-    setSelectedChapter("");
+    filters.clearFilters();
     setSearchQuery("");
     setSortBy("citation");
     router.push("/reporting");
   };
 
-  const hasActiveFilters = appliedTag || appliedTitle || appliedChapter || appliedSearchQuery;
+  // Derived state
+  const results = api.data?.results || [];
+  const total = api.data?.total || 0;
+  const allTags = api.data?.allTags || [];
+
+  const hasActiveFilters =
+    appliedFilters.tag ||
+    appliedFilters.title ||
+    appliedFilters.chapter ||
+    appliedFilters.searchQuery;
 
   // Group results by tags for grouped view
   const groupedResults = () => {
@@ -294,7 +245,7 @@ function ReportingPageContent() {
             </h1>
             <div className="flex items-center gap-3">
               <span className="text-2xl font-bold text-teal-700">
-                {loading ? "..." : total}
+                {api.loading ? "..." : total}
               </span>
               <span className="text-slate-600">
                 {total === 1 ? "requirement" : "requirements"} found
@@ -338,18 +289,18 @@ function ReportingPageContent() {
                 </select>
               </div>
 
-              {/* Title Filter */}
+              {/* Title Filter - using shared hook */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
                   Filter by Title
                 </label>
                 <select
-                  value={selectedTitle}
-                  onChange={(e) => setSelectedTitle(e.target.value)}
+                  value={filters.selectedTitle}
+                  onChange={(e) => filters.setTitle(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-slate-900"
                 >
                   <option value="">All Titles</option>
-                  {availableTitles.map((title) => (
+                  {filters.availableTitles.map((title) => (
                     <option key={title} value={title}>
                       {title}
                     </option>
@@ -357,19 +308,19 @@ function ReportingPageContent() {
                 </select>
               </div>
 
-              {/* Chapter Filter */}
+              {/* Chapter Filter - using shared hook */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
                   Filter by Chapter
                 </label>
                 <select
-                  value={selectedChapter}
-                  onChange={(e) => setSelectedChapter(e.target.value)}
-                  disabled={!selectedTitle}
+                  value={filters.selectedChapter}
+                  onChange={(e) => filters.setChapter(e.target.value)}
+                  disabled={!filters.selectedTitle}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
                 >
                   <option value="">All Chapters</option>
-                  {availableChapters.map((chapter) => (
+                  {filters.availableChapters.map((chapter) => (
                     <option key={chapter} value={chapter}>
                       {chapter}
                     </option>
@@ -432,24 +383,24 @@ function ReportingPageContent() {
               <div className="mt-4 pt-4 border-t border-slate-200">
                 <p className="text-sm text-slate-600 mb-2">Active Filters:</p>
                 <div className="flex flex-wrap gap-2">
-                  {appliedTag && (
+                  {appliedFilters.tag && (
                     <span className="bg-violet-100 text-violet-800 px-3 py-1 rounded-full text-sm">
-                      Tag: {appliedTag}
+                      Tag: {appliedFilters.tag}
                     </span>
                   )}
-                  {appliedTitle && (
+                  {appliedFilters.title && (
                     <span className="bg-sky-100 text-sky-800 px-3 py-1 rounded-full text-sm">
-                      Title: {appliedTitle}
+                      Title: {appliedFilters.title}
                     </span>
                   )}
-                  {appliedChapter && (
+                  {appliedFilters.chapter && (
                     <span className="bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-sm">
-                      Chapter: {appliedChapter}
+                      Chapter: {appliedFilters.chapter}
                     </span>
                   )}
-                  {appliedSearchQuery && (
+                  {appliedFilters.searchQuery && (
                     <span className="bg-amber-100 text-amber-800 px-3 py-1 rounded-full text-sm">
-                      Search: "{appliedSearchQuery}"
+                      Search: "{appliedFilters.searchQuery}"
                     </span>
                   )}
                 </div>
@@ -458,7 +409,7 @@ function ReportingPageContent() {
           </div>
 
           {/* Loading State */}
-          {loading && (
+          {api.loading && (
             <div className="text-center py-12">
               <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-teal-700"></div>
               <p className="mt-4 text-slate-600">Loading reporting requirements...</p>
@@ -466,14 +417,14 @@ function ReportingPageContent() {
           )}
 
           {/* Error State */}
-          {error && (
+          {api.error && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-              <p className="text-red-800">{error}</p>
+              <p className="text-red-800">{api.error}</p>
             </div>
           )}
 
           {/* Results */}
-          {!loading && !error && (
+          {!api.loading && !api.error && (
             <>
               {viewMode === "cards" ? (
                 // Card View
