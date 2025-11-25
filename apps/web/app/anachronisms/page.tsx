@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Navigation from "@/components/Navigation";
 import AnachronismIndicatorCard from "@/components/AnachronismIndicatorCard";
 import { Suspense } from "react";
+import { useFilters, useApiData } from "@/hooks";
 
 interface AnachronismIndicator {
   id: number;
@@ -14,13 +15,11 @@ interface AnachronismIndicator {
   recommendation: string;
   explanation: string;
   matchedPhrases: string[];
-  // Section context
   sectionId: string;
   citation: string;
   heading: string;
   titleLabel: string;
   chapterLabel: string;
-  // Parent analysis
   overallSeverity: string | null;
   requiresImmediateReview: boolean;
   summary: string | null;
@@ -47,52 +46,29 @@ function AnachronismsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // State
-  const [results, setResults] = useState<AnachronismIndicator[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [total, setTotal] = useState(0);
+  // Use shared hooks
+  const filters = useFilters();
+  const api = useApiData<AnachronismResponse>();
 
-  // Filter state
+  // Anachronism-specific filter state
   const [selectedSeverity, setSelectedSeverity] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
-  const [selectedTitle, setSelectedTitle] = useState("");
-  const [selectedChapter, setSelectedChapter] = useState("");
   const [requiresReview, setRequiresReview] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("severity");
 
-  // Applied filters
-  const [appliedSeverity, setAppliedSeverity] = useState("");
-  const [appliedCategory, setAppliedCategory] = useState("");
-  const [appliedTitle, setAppliedTitle] = useState("");
-  const [appliedChapter, setAppliedChapter] = useState("");
-  const [appliedRequiresReview, setAppliedRequiresReview] = useState(false);
-  const [appliedSearchQuery, setAppliedSearchQuery] = useState("");
-  const [appliedSortBy, setAppliedSortBy] = useState("severity");
+  // Track applied filters for "Clear Filters" button
+  const [appliedFilters, setAppliedFilters] = useState({
+    severity: "",
+    category: "",
+    title: "",
+    chapter: "",
+    requiresReview: false,
+    searchQuery: "",
+    sortBy: "severity",
+  });
 
-  // Available options
-  const [allCategories, setAllCategories] = useState<Array<{ category: string; count: number }>>([]);
-  const [severityDistribution, setSeverityDistribution] = useState<Array<{ severity: string; count: number }>>([]);
-  const [availableTitles, setAvailableTitles] = useState<string[]>([]);
-  const [availableChapters, setAvailableChapters] = useState<string[]>([]);
-
-  // Load titles on mount
-  useEffect(() => {
-    loadTitles();
-  }, []);
-
-  // Load chapters when title changes
-  useEffect(() => {
-    if (selectedTitle) {
-      loadChapters(selectedTitle);
-    } else {
-      setAvailableChapters([]);
-      setSelectedChapter("");
-    }
-  }, [selectedTitle]);
-
-  // Auto-load from URL params
+  // Auto-load from URL params on mount
   useEffect(() => {
     const urlSeverity = searchParams.get("severity") || "";
     const urlCategory = searchParams.get("category") || "";
@@ -102,93 +78,57 @@ function AnachronismsPageContent() {
     const urlSearchQuery = searchParams.get("searchQuery") || "";
     const urlSortBy = searchParams.get("sortBy") || "severity";
 
+    // Set form state
     setSelectedSeverity(urlSeverity);
     setSelectedCategory(urlCategory);
-    setSelectedTitle(urlTitle);
-    setSelectedChapter(urlChapter);
+    filters.setSelectedTitle(urlTitle);
+    filters.setSelectedChapter(urlChapter);
     setRequiresReview(urlRequiresReview);
     setSearchQuery(urlSearchQuery);
     setSortBy(urlSortBy);
 
-    setAppliedSeverity(urlSeverity);
-    setAppliedCategory(urlCategory);
-    setAppliedTitle(urlTitle);
-    setAppliedChapter(urlChapter);
-    setAppliedRequiresReview(urlRequiresReview);
-    setAppliedSearchQuery(urlSearchQuery);
-    setAppliedSortBy(urlSortBy);
+    // Track applied filters
+    setAppliedFilters({
+      severity: urlSeverity,
+      category: urlCategory,
+      title: urlTitle,
+      chapter: urlChapter,
+      requiresReview: urlRequiresReview,
+      searchQuery: urlSearchQuery,
+      sortBy: urlSortBy,
+    });
 
-    fetchAnachronismData(urlSeverity, urlCategory, urlTitle, urlChapter, urlRequiresReview, urlSearchQuery, urlSortBy);
+    // Fetch data
+    fetchData(urlSeverity, urlCategory, urlTitle, urlChapter, urlRequiresReview, urlSearchQuery, urlSortBy);
   }, [searchParams]);
 
-  const loadTitles = async () => {
-    try {
-      const response = await fetch("/api/filters/titles");
-      const data = await response.json();
-      setAvailableTitles(data.titles || []);
-    } catch (err) {
-      console.error("Failed to load titles:", err);
-    }
-  };
-
-  const loadChapters = async (title: string) => {
-    try {
-      const response = await fetch(`/api/filters/chapters?title=${encodeURIComponent(title)}`);
-      const data = await response.json();
-      setAvailableChapters(data.chapters || []);
-    } catch (err) {
-      console.error("Failed to load chapters:", err);
-    }
-  };
-
-  const fetchAnachronismData = async (
-    severity: string = selectedSeverity,
-    category: string = selectedCategory,
-    title: string = selectedTitle,
-    chapter: string = selectedChapter,
-    requiresRev: boolean = requiresReview,
-    search: string = searchQuery,
-    sort: string = sortBy
+  const fetchData = useCallback(async (
+    severity: string,
+    category: string,
+    title: string,
+    chapter: string,
+    reqReview: boolean,
+    search: string,
+    sort: string
   ) => {
-    setLoading(true);
-    setError(null);
+    const params = new URLSearchParams();
+    if (severity) params.append("severity", severity);
+    if (category) params.append("category", category);
+    if (title) params.append("title", title);
+    if (chapter) params.append("chapter", chapter);
+    if (reqReview) params.append("requiresReview", "true");
+    if (search) params.append("searchQuery", search);
+    params.append("sortBy", sort);
 
-    try {
-      const params = new URLSearchParams();
-      if (severity) params.append("severity", severity);
-      if (category) params.append("category", category);
-      if (title) params.append("title", title);
-      if (chapter) params.append("chapter", chapter);
-      if (requiresRev) params.append("requiresReview", "true");
-      if (search) params.append("searchQuery", search);
-      params.append("sortBy", sort);
-
-      const url = `/api/anachronism-indicators?${params.toString()}`;
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data: AnachronismResponse = await response.json();
-      setResults(data.results);
-      setTotal(data.total);
-      setAllCategories(data.allCategories);
-      setSeverityDistribution(data.severityDistribution);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-      console.error("Error fetching anachronism data:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    await api.fetchData("/api/anachronism-indicators", params);
+  }, [api]);
 
   const applyFilters = () => {
     const params = new URLSearchParams();
     if (selectedSeverity) params.append("severity", selectedSeverity);
     if (selectedCategory) params.append("category", selectedCategory);
-    if (selectedTitle) params.append("title", selectedTitle);
-    if (selectedChapter) params.append("chapter", selectedChapter);
+    if (filters.selectedTitle) params.append("title", filters.selectedTitle);
+    if (filters.selectedChapter) params.append("chapter", filters.selectedChapter);
     if (requiresReview) params.append("requiresReview", "true");
     if (searchQuery) params.append("searchQuery", searchQuery);
     params.append("sortBy", sortBy);
@@ -199,43 +139,26 @@ function AnachronismsPageContent() {
   const clearFilters = () => {
     setSelectedSeverity("");
     setSelectedCategory("");
-    setSelectedTitle("");
-    setSelectedChapter("");
+    filters.clearFilters();
     setRequiresReview(false);
     setSearchQuery("");
     setSortBy("severity");
     router.push("/anachronisms");
   };
 
-  function getSeverityColor(severity: string): string {
-    switch (severity) {
-      case "CRITICAL":
-        return "text-red-600";
-      case "HIGH":
-        return "text-orange-600";
-      case "MEDIUM":
-        return "text-yellow-600";
-      case "LOW":
-        return "text-slate-600";
-      default:
-        return "text-gray-600";
-    }
-  }
-
-  function formatCategoryName(category: string): string {
-    return category
-      .split("_")
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(" ");
-  }
+  // Derived state
+  const results = api.data?.results || [];
+  const total = api.data?.total || 0;
+  const allCategories = api.data?.allCategories || [];
+  const severityDistribution = api.data?.severityDistribution || [];
 
   const hasActiveFilters =
-    appliedSeverity ||
-    appliedCategory ||
-    appliedTitle ||
-    appliedChapter ||
-    appliedRequiresReview ||
-    appliedSearchQuery;
+    appliedFilters.severity ||
+    appliedFilters.category ||
+    appliedFilters.title ||
+    appliedFilters.chapter ||
+    appliedFilters.requiresReview ||
+    appliedFilters.searchQuery;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -253,22 +176,13 @@ function AnachronismsPageContent() {
 
         {/* Stats Dashboard */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
-          {/* Total indicators */}
           <div className="bg-white rounded-lg shadow p-6">
-            <div className="text-sm font-medium text-gray-600 mb-1">
-              Total Issues
-            </div>
-            <div className="text-3xl font-bold text-gray-900">
-              {total.toLocaleString()}
-            </div>
+            <div className="text-sm font-medium text-gray-600 mb-1">Total Issues</div>
+            <div className="text-3xl font-bold text-gray-900">{total.toLocaleString()}</div>
           </div>
-
-          {/* Severity distribution */}
           {severityDistribution.map((dist) => (
             <div key={dist.severity} className="bg-white rounded-lg shadow p-6">
-              <div className="text-sm font-medium text-gray-600 mb-1">
-                {dist.severity}
-              </div>
+              <div className="text-sm font-medium text-gray-600 mb-1">{dist.severity}</div>
               <div className={`text-3xl font-bold ${getSeverityColor(dist.severity)}`}>
                 {dist.count.toLocaleString()}
               </div>
@@ -284,9 +198,7 @@ function AnachronismsPageContent() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             {/* Severity filter */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Severity
-              </label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Severity</label>
               <select
                 value={selectedSeverity}
                 onChange={(e) => setSelectedSeverity(e.target.value)}
@@ -302,9 +214,7 @@ function AnachronismsPageContent() {
 
             {/* Category filter */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Category
-              </label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Category</label>
               <select
                 value={selectedCategory}
                 onChange={(e) => setSelectedCategory(e.target.value)}
@@ -319,50 +229,40 @@ function AnachronismsPageContent() {
               </select>
             </div>
 
-            {/* Title filter */}
+            {/* Title filter - using shared hook */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Title
-              </label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Title</label>
               <select
-                value={selectedTitle}
-                onChange={(e) => setSelectedTitle(e.target.value)}
+                value={filters.selectedTitle}
+                onChange={(e) => filters.setTitle(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-slate-900"
               >
                 <option value="">All Titles</option>
-                {availableTitles.map((title) => (
-                  <option key={title} value={title}>
-                    {title}
-                  </option>
+                {filters.availableTitles.map((title) => (
+                  <option key={title} value={title}>{title}</option>
                 ))}
               </select>
             </div>
 
-            {/* Chapter filter */}
+            {/* Chapter filter - using shared hook */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Chapter
-              </label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Chapter</label>
               <select
-                value={selectedChapter}
-                onChange={(e) => setSelectedChapter(e.target.value)}
-                disabled={!selectedTitle}
+                value={filters.selectedChapter}
+                onChange={(e) => filters.setChapter(e.target.value)}
+                disabled={!filters.selectedTitle}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
               >
                 <option value="">All Chapters</option>
-                {availableChapters.map((chapter) => (
-                  <option key={chapter} value={chapter}>
-                    {chapter}
-                  </option>
+                {filters.availableChapters.map((chapter) => (
+                  <option key={chapter} value={chapter}>{chapter}</option>
                 ))}
               </select>
             </div>
 
             {/* Sort by */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Sort By
-              </label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Sort By</label>
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
@@ -378,9 +278,7 @@ function AnachronismsPageContent() {
           {/* Search and checkboxes */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Search
-              </label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Search</label>
               <input
                 type="text"
                 value={searchQuery}
@@ -389,7 +287,6 @@ function AnachronismsPageContent() {
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-slate-900 placeholder:text-slate-400"
               />
             </div>
-
             <div className="flex items-end">
               <label className="flex items-center space-x-2 cursor-pointer">
                 <input
@@ -398,9 +295,7 @@ function AnachronismsPageContent() {
                   onChange={(e) => setRequiresReview(e.target.checked)}
                   className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
                 />
-                <span className="text-sm text-slate-700">
-                  Requires Immediate Review
-                </span>
+                <span className="text-sm text-slate-700">Requires Immediate Review</span>
               </label>
             </div>
           </div>
@@ -432,25 +327,25 @@ function AnachronismsPageContent() {
             </h2>
           </div>
 
-          {loading && (
+          {api.loading && (
             <div className="px-6 py-12 text-center text-gray-500">
               Loading anachronism analysis...
             </div>
           )}
 
-          {error && (
+          {api.error && (
             <div className="px-6 py-12 text-center text-red-600">
-              Error: {error}
+              Error: {api.error}
             </div>
           )}
 
-          {!loading && !error && results.length === 0 && (
+          {!api.loading && !api.error && results.length === 0 && (
             <div className="px-6 py-12 text-center text-gray-500">
               No anachronism issues found matching your filters.
             </div>
           )}
 
-          {!loading && !error && results.length > 0 && (
+          {!api.loading && !api.error && results.length > 0 && (
             <div className="p-6 space-y-4">
               {results.map((indicator) => (
                 <AnachronismIndicatorCard key={indicator.id} {...indicator} />
@@ -461,6 +356,24 @@ function AnachronismsPageContent() {
       </div>
     </div>
   );
+}
+
+// Helper functions
+function getSeverityColor(severity: string): string {
+  switch (severity) {
+    case "CRITICAL": return "text-red-600";
+    case "HIGH": return "text-orange-600";
+    case "MEDIUM": return "text-yellow-600";
+    case "LOW": return "text-slate-600";
+    default: return "text-gray-600";
+  }
+}
+
+function formatCategoryName(category: string): string {
+  return category
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 export default function AnachronismsPage() {
